@@ -9,6 +9,7 @@ A two-stage download companion for **Radarr, Sonarr and qBittorrent**.
 [![Build](https://github.com/JonasBrother97/prontarr/actions/workflows/ci.yml/badge.svg)](https://github.com/JonasBrother97/prontarr/actions/workflows/ci.yml)
 [![Docker Hub](https://img.shields.io/docker/v/jonasbrother97/prontarr?label=Docker%20Hub)](https://hub.docker.com/r/jonasbrother97/prontarr)
 [![Buy Me a Coffee](https://img.shields.io/badge/Support-Buy%20Me%20a%20Coffee-ffdd00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/jonasbrother97)
+[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=JonasBrother97_prontarr&metric=alert_status)](https://sonarcloud.io/project/overview?id=JonasBrother97_prontarr)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 [Getting started](#getting-started) · [Features](#features) · [Documentation](#documentation) · [Report a bug](https://github.com/JonasBrother97/prontarr/issues)

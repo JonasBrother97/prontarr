@@ -24,15 +24,11 @@ Actions are pinned by commit. Scanner dependencies have explicit versions where 
 
 Bandit analyzes Python, not Zig. Standard Semgrep and SonarQube analyzers do not cover this Zig backend. Zig compilation/tests, API boundary tests and controller lifecycle contracts remain required. Native SQLite and statically bundled code may not be fully represented in runtime package inventories. SBOM generation is inventory, not a vulnerability scan.
 
-## SonarQube setup
+## SonarQube Cloud
 
-The job is disabled until repository variable `SONAR_ENABLED=true` is configured. Add:
+Analysis targets the public project `JonasBrother97_prontarr` in organization `jonasbrother97`, using the free Cloud service. Store `SONAR_TOKEN` as a repository secret. No token is committed.
 
-- Secret `SONAR_TOKEN` with access limited to this project.
-- Variables `SONAR_HOST_URL` and `SONAR_PROJECT_KEY`.
-- Variable `SONAR_ORGANIZATION` for SonarQube Cloud (leave empty for self-hosted).
-
-The job checks required values and waits for the quality gate. It runs only on trusted non-PR events so analysis credentials are not exposed to pull requests. It is not advertised as active until a real server/project is configured and a run succeeds.
+The job validates the token, runs only on trusted non-PR events in the original repository, and waits for the quality gate. Forks do not need Sonar credentials. Project key and organization are in `sonar-project.properties`. Disable SonarCloud Automatic Analysis when using this CI-based scan.
 
 ## Funding
 
