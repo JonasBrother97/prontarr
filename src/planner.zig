@@ -6,11 +6,12 @@ const A = std.mem.Allocator;
 pub const AppKind = enum { radarr, sonarr };
 pub const Ref = struct { app: AppKind, media_id: i64, episode_ids: []const i64 = &.{}, original_hash: ?[]const u8 = null };
 pub const FileState = struct { episode_id: i64, has_file: bool, file_id: ?i64, quality_id: ?i64 = null, format_score: ?i64 = null };
-pub const ScopeFile = struct { name: []const u8, selected: bool, episode_ids: []const i64 };
+pub const ScopeFile = struct { bytes: u64 = 0, name: []const u8, selected: bool, episode_ids: []const i64 };
 pub const Scope = struct { verified: bool, contained_episode_ids: []const i64, selected_episode_ids: []const i64, absent_queue_episode_ids: []const i64, files: []const ScopeFile, warnings: []const []const u8 };
 pub const QualityRank = struct { rank: i64, allowed: bool };
 pub const Comparison = struct { better: ?bool, reason: []const u8 };
 pub const Candidate = struct {
+    episode_id: i64 = 0,
     id: []const u8,
     title: []const u8,
     bytes: u64,
@@ -27,7 +28,9 @@ pub const Candidate = struct {
     surround_hint: bool = false,
 };
 pub const Release = struct { candidate: Candidate, guid: []const u8, indexer_id: i64, info_hash: ?[]const u8 = null };
-pub const Report = struct { target: Ref, title: []const u8, profile_name: []const u8, initial_profile_name: ?[]const u8 = null, initial_profile_id: ?i64 = null, final_profile_id: ?i64 = null, native_profile_name: ?[]const u8 = null, upgrade_allowed: bool, scope: ?Scope = null, files: []const FileState, candidates: []const Candidate, compact_candidate_id: ?[]const u8 = null, upgrade_candidate_id: ?[]const u8 = null, searched: bool, created_at_ms: i64, notes: []const []const u8 = &.{} };
+pub const Selection = struct { episode_id: i64, candidate_id: []const u8 };
+pub const Original = struct { hash: []const u8, title: []const u8, quality_id: i64, format_score: i64, resolution: u16, bytes: u64, compact: bool, paused: bool, progress: f64 };
+pub const Report = struct { original: ?Original = null, compact_selections: []const Selection = &.{}, upgrade_selections: []const Selection = &.{}, target: Ref, title: []const u8, profile_name: []const u8, initial_profile_name: ?[]const u8 = null, initial_profile_id: ?i64 = null, final_profile_id: ?i64 = null, native_profile_name: ?[]const u8 = null, upgrade_allowed: bool, scope: ?Scope = null, files: []const FileState, candidates: []const Candidate, compact_candidate_id: ?[]const u8 = null, upgrade_candidate_id: ?[]const u8 = null, searched: bool, created_at_ms: i64, notes: []const []const u8 = &.{} };
 pub const Analysis = struct { report: Report, releases: []const Release };
 pub fn connection(config: T.Config, app: AppKind) !T.Connection {
     return (if (app == .radarr) config.radarr else config.sonarr) orelse error.ConnectionNotConfigured;
@@ -203,7 +206,7 @@ pub fn scope(a: A, config: T.Config, ref: Ref, m: J.Value) !Scope {
             }
         }
         if (ids.items.len == 0 or priority == null) try warnings.append(a, try std.fmt.allocPrint(a, "File scope or priority is unconfirmed: {s}", .{base}));
-        try manifest.append(a, .{ .name = name, .selected = enabled, .episode_ids = ids.items });
+        try manifest.append(a, .{ .bytes = @intCast(@max(0, J.num(file, "size") orelse 0)), .name = name, .selected = enabled, .episode_ids = ids.items });
     }
     var absent: std.ArrayList(i64) = .empty;
     const queue = try get(a, c, "/api/v3/queue?page=1&pageSize=1000&includeEpisode=true");
@@ -239,93 +242,189 @@ fn compactScore(candidate: Candidate) f64 {
     const gib = @as(f64, @floatFromInt(candidate.bytes)) / (1024 * 1024 * 1024);
     return @log2(@as(f64, @floatFromInt(candidate.seeds)) + 1) / std.math.pow(f64, @max(gib, 0.4), 0.45);
 }
+pub fn queueOnlyRejections(raw: J.Value) bool {
+    const reasons = J.items(raw, "rejections");
+    if (reasons.len == 0 or (J.flag(raw, "temporarilyRejected") orelse false)) return false;
+    for (reasons) |value| {
+        const reason = J.text(value) orelse return false;
+        if (!std.mem.startsWith(u8, reason, "Quality for release in queue") and !std.mem.startsWith(u8, reason, "Existing release in queue")) return false;
+    }
+    return true;
+}
+fn compactCap(policy: E.Policy, app: AppKind, m: J.Value) u64 {
+    if (app == .radarr) return policy.max_compact_bytes;
+    const runtime: i64 = @min(600, @max(1, J.num(m, "runtime") orelse 45));
+    return @min(policy.max_compact_bytes, @as(u64, @intCast(@min(2684354560, @max(644245094, runtime * 45 * 1024 * 1024)))));
+}
+fn originalRelease(a: A, config: T.Config, ref: Ref, profile: J.Value, initial: J.Value, assigned: i64, policy: E.Policy, m: J.Value, manifest: ?Scope) !?Original {
+    const hash = ref.original_hash orelse return null;
+    if (ref.app == .sonarr and (manifest == null or !manifest.?.verified)) return error.UnverifiedTorrentScope;
+    const qb = config.qbittorrent orelse return error.ConnectionNotConfigured;
+    const list = try get(a, qb, try std.fmt.allocPrint(a, "/api/v2/torrents/info?hashes={s}", .{hash}));
+    if (J.array(list).len != 1) return error.OriginalTorrentNotFound;
+    const torrent = J.array(list)[0];
+    if (!std.ascii.eqlIgnoreCase(hash, J.str(torrent, "hash") orelse "")) return error.OriginalTorrentNotFound;
+    const size = J.num(torrent, "size") orelse return error.UnknownTorrentState;
+    if (size <= 0) return error.UnknownTorrentState;
+    const status = J.str(torrent, "state") orelse return error.UnknownTorrentState;
+    const progress = J.field(torrent, "progress");
+    const fraction: f64 = if (progress == .float) progress.float else if (progress == .integer) @floatFromInt(progress.integer) else return error.UnknownTorrentState;
+    if (!std.math.isFinite(fraction) or fraction < 0 or fraction > 1) return error.UnknownTorrentState;
+    const queue = try get(a, try connection(config, ref.app), "/api/v3/queue?page=1&pageSize=1000");
+    if ((J.num(queue, "totalRecords") orelse 1001) > 1000) return error.QueueScopeUnknown;
+    var found: std.ArrayList(i64) = .empty;
+    var qid: ?i64 = null;
+    var score: ?i64 = null;
+    var initial_score: ?i64 = null;
+    var resolution: i64 = 0;
+    for (J.items(queue, "records")) |record| {
+        if (!std.ascii.eqlIgnoreCase(J.str(record, "downloadId") orelse "", hash) or J.num(record, if (ref.app == .radarr) "movieId" else "seriesId") != ref.media_id) continue;
+        const eid = if (ref.app == .radarr) 0 else J.num(record, "episodeId") orelse continue;
+        if (ref.app == .sonarr and !contains(ref.episode_ids, eid)) continue;
+        const quality = J.field(J.field(record, "quality"), "quality");
+        const next_id = J.num(quality, "id") orelse return error.UnknownOriginalQuality;
+        const next_score = scoreFor(profile, record, (J.num(profile, "id") orelse assigned) == assigned) orelse return error.UnknownOriginalFormats;
+        const next_initial = scoreFor(initial, record, (J.num(initial, "id") orelse assigned) == assigned) orelse return error.UnknownOriginalFormats;
+        if (qid != null and (qid.? != next_id or score.? != next_score or initial_score.? != next_initial)) return error.InconsistentOriginalQuality;
+        qid = next_id;
+        score = next_score;
+        initial_score = next_initial;
+        resolution = J.num(quality, "resolution") orelse return error.UnknownOriginalQuality;
+        try addUnique(a, &found, eid);
+    }
+    if (qid == null or (ref.app == .sonarr and found.items.len != ref.episode_ids.len)) return error.OriginalQueueScopeMismatch;
+    const final_rank = qualityRank(profile, qid.?) orelse return error.InvalidQualityProfile;
+    if (!final_rank.allowed or score.? < (J.num(profile, "minFormatScore") orelse 0)) return error.OriginalProfileRejected;
+    const initial_rank = qualityRank(initial, qid.?);
+    const cap = compactCap(policy, ref.app, m);
+    var compact = initial_rank != null and initial_rank.?.allowed and initial_score.? >= (J.num(initial, "minFormatScore") orelse 0) and resolution >= policy.min_resolution and resolution <= policy.max_resolution;
+    if (ref.app == .radarr) compact = compact and @as(u64, @intCast(size)) <= cap else {
+        for (manifest.?.files) |file| if (file.selected and (file.bytes == 0 or file.bytes > cap * file.episode_ids.len)) {
+            compact = false;
+        };
+    }
+    return .{ .hash = hash, .title = J.str(torrent, "name") orelse "Existing release", .quality_id = qid.?, .format_score = score.?, .resolution = @intCast(resolution), .bytes = @intCast(size), .compact = compact, .paused = std.mem.startsWith(u8, status, "stopped") or std.mem.startsWith(u8, status, "paused"), .progress = fraction };
+}
 pub fn analyze(a: A, io: std.Io, config: T.Config, reference: Ref, policy: E.Policy, search_sources: bool) !Analysis {
     try validate(reference);
     var ref = reference;
     const c = try connection(config, ref.app);
     const m = try media(a, config, ref);
     const title = J.str(m, "title") orelse return error.InvalidMediaReference;
-    const assigned_id = J.num(m, "qualityProfileId") orelse return error.InvalidQualityProfile;
-    const native_profile = try loadProfile(a, config, ref.app, assigned_id);
-    const final_id = selectedProfileId(policy, ref.app, false) orelse assigned_id;
-    const initial_id = selectedProfileId(policy, ref.app, true) orelse assigned_id;
-    const profile = if (final_id == assigned_id) native_profile else try loadProfile(a, config, ref.app, final_id);
-    const initial_profile = if (initial_id == final_id) profile else if (initial_id == assigned_id) native_profile else try loadProfile(a, config, ref.app, initial_id);
+    const assigned = J.num(m, "qualityProfileId") orelse return error.InvalidQualityProfile;
+    const native = try loadProfile(a, config, ref.app, assigned);
+    const final_id = selectedProfileId(policy, ref.app, false) orelse assigned;
+    const initial_id = selectedProfileId(policy, ref.app, true) orelse assigned;
+    const profile = if (final_id == assigned) native else try loadProfile(a, config, ref.app, final_id);
+    const initial = if (initial_id == final_id) profile else if (initial_id == assigned) native else try loadProfile(a, config, ref.app, initial_id);
     var manifest: ?Scope = null;
     if (ref.app == .sonarr and ref.original_hash != null) {
         manifest = try scope(a, config, ref, m);
-        if (manifest.?.verified) ref.episode_ids = manifest.?.selected_episode_ids;
+        if (!manifest.?.verified) return error.UnverifiedTorrentScope;
+        ref.episode_ids = manifest.?.selected_episode_ids;
     }
-    const current = if (ref.app == .radarr or ref.episode_ids.len > 0) try files(a, config, ref, profile) else &.{};
+    var current = try files(a, config, ref, profile);
+    if (ref.app == .sonarr) {
+        if (ref.episode_ids.len > 64) return error.EpisodeScopeTooLarge;
+        var missing: std.ArrayList(i64) = .empty;
+        var filtered: std.ArrayList(FileState) = .empty;
+        for (current) |file| if (!file.has_file) {
+            try missing.append(a, file.episode_id);
+            try filtered.append(a, file);
+        };
+        if (missing.items.len > 0) {
+            ref.episode_ids = missing.items;
+            current = filtered.items;
+        }
+    }
+    const original = try originalRelease(a, config, ref, profile, initial, assigned, policy, m, manifest);
     var releases: std.ArrayList(Release) = .empty;
     var candidates: std.ArrayList(Candidate) = .empty;
-    var compact: ?usize = null;
-    var best: ?usize = null;
-    if (search_sources) {
-        const path = if (ref.app == .radarr) try std.fmt.allocPrint(a, "/api/v3/release?movieId={d}", .{ref.media_id}) else if (ref.episode_ids.len == 1) try std.fmt.allocPrint(a, "/api/v3/release?episodeId={d}", .{ref.episode_ids[0]}) else null;
-        if (path) |url| {
-            const raw_list = try J.parse(a, try T.search(a, c, url));
-            if (raw_list != .array) return error.InvalidUpstreamResponse;
-            for (J.array(raw_list)[0..@min(J.array(raw_list).len, 1000)]) |raw| {
-                const guid = J.str(raw, "guid") orelse continue;
-                const indexer = J.num(raw, "indexerId") orelse continue;
-                const release_title = J.str(raw, "title") orelse continue;
-                const q = J.field(J.field(raw, "quality"), "quality");
-                const qid = J.num(q, "id") orelse continue;
-                const resolution = J.num(q, "resolution") orelse 0;
-                const size = J.num(raw, "size") orelse 0;
-                if (size <= 0 or resolution < 0 or resolution > 65535) continue;
-                const score = scoreFor(profile, raw, final_id == assigned_id) orelse continue;
-                const initial_score = scoreFor(initial_profile, raw, initial_id == assigned_id);
-                const initial_rank = qualityRank(initial_profile, qid);
-                const final_rank = qualityRank(profile, qid);
-                const initial_ok = initial_rank != null and initial_rank.?.allowed and initial_score != null and initial_score.? >= (J.num(initial_profile, "minFormatScore") orelse 0);
-                const final_ok = final_rank != null and final_rank.?.allowed and score >= (J.num(profile, "minFormatScore") orelse 0);
-                const original = hasLanguage(raw, J.num(J.field(m, "originalLanguage"), "id") orelse 0);
-                const allowed = (J.flag(raw, "approved") orelse false) and !(J.flag(raw, "rejected") orelse true) and !(J.flag(raw, "temporarilyRejected") orelse false) and (J.flag(raw, "downloadAllowed") orelse false) and std.mem.eql(u8, J.str(raw, "protocol") orelse "", "torrent") and original;
-                const disallowed_3d = try hasText(a, release_title, "hsbs") or try hasText(a, release_title, ".3d.") or try hasText(a, release_title, " 3d ");
-                const remux = std.mem.eql(u8, J.str(q, "modifier") orelse "", "remux");
-                var cap = policy.max_compact_bytes;
-                if (ref.app == .sonarr) {
-                    const runtime = J.num(m, "runtime") orelse 45;
-                    cap = @min(policy.max_compact_bytes, @as(u64, @intCast(@min(2684354560, @max(644245094, runtime * 45 * 1024 * 1024)))));
+    var compact_choices: std.ArrayList(Selection) = .empty;
+    var upgrade_choices: std.ArrayList(Selection) = .empty;
+    const episode_queries: []const i64 = if (ref.app == .radarr) &.{0} else ref.episode_ids;
+    if (search_sources) for (episode_queries) |eid| {
+        var compact: ?usize = null;
+        var best: ?usize = null;
+        const episode = if (ref.app == .sonarr) try get(a, c, try std.fmt.allocPrint(a, "/api/v3/episode/{d}", .{eid})) else J.Value.null;
+        const path = try std.fmt.allocPrint(a, "/api/v3/release?{s}={d}", .{ if (ref.app == .radarr) "movieId" else "episodeId", if (ref.app == .radarr) ref.media_id else eid });
+        const raw_list = try J.parse(a, try T.search(a, c, path));
+        if (raw_list != .array) return error.InvalidUpstreamResponse;
+        for (J.array(raw_list)[0..@min(J.array(raw_list).len, 1000)]) |raw| {
+            const guid = J.str(raw, "guid") orelse continue;
+            const indexer = J.num(raw, "indexerId") orelse continue;
+            const release_title = J.str(raw, "title") orelse continue;
+            if (ref.app == .radarr) {
+                if (J.num(raw, "mappedMovieId")) |mid| if (mid != ref.media_id) continue;
+            } else {
+                if (J.num(raw, "seriesId")) |mid| if (mid != ref.media_id) continue;
+                const numbers = J.items(raw, "episodeNumbers");
+                if (numbers.len != 1 or J.int(numbers[0]) != J.num(episode, "episodeNumber") or J.num(raw, "seasonNumber") != J.num(episode, "seasonNumber") or (J.flag(raw, "fullSeason") orelse false)) continue;
+            }
+            const q = J.field(J.field(raw, "quality"), "quality");
+            const qid = J.num(q, "id") orelse continue;
+            const resolution = J.num(q, "resolution") orelse 0;
+            const size = J.num(raw, "size") orelse 0;
+            if (size <= 0 or resolution < 0 or resolution > 65535) continue;
+            const score = scoreFor(profile, raw, final_id == assigned) orelse continue;
+            const initial_score = scoreFor(initial, raw, initial_id == assigned);
+            const native_score = formatScore(native, raw) orelse continue;
+            const initial_rank = qualityRank(initial, qid);
+            const final_rank = qualityRank(profile, qid);
+            const native_rank = qualityRank(native, qid);
+            const initial_ok = initial_rank != null and initial_rank.?.allowed and initial_score != null and initial_score.? >= (J.num(initial, "minFormatScore") orelse 0);
+            const final_ok = final_rank != null and final_rank.?.allowed and score >= (J.num(profile, "minFormatScore") orelse 0);
+            const language_ok = hasLanguage(raw, J.num(J.field(m, "originalLanguage"), "id") orelse 0);
+            const protocol_ok = std.mem.eql(u8, J.str(raw, "protocol") orelse "", "torrent");
+            const strictly_approved = (J.flag(raw, "approved") orelse false) and !(J.flag(raw, "rejected") orelse true) and !(J.flag(raw, "temporarilyRejected") orelse false) and (J.flag(raw, "downloadAllowed") orelse false);
+            const queue_override = original != null and !original.?.compact and queueOnlyRejections(raw) and native_rank != null and native_rank.?.allowed and native_score >= (J.num(native, "minFormatScore") orelse 0);
+            const allowed = (strictly_approved or queue_override) and protocol_ok and language_ok;
+            const disallowed_3d = try hasText(a, release_title, "hsbs") or try hasText(a, release_title, ".3d.") or try hasText(a, release_title, " 3d ");
+            const remux = std.mem.eql(u8, J.str(q, "modifier") orelse "", "remux");
+            const seeds = @max(0, J.num(raw, "seeders") orelse 0);
+            const is_compact = allowed and initial_ok and !disallowed_3d and !remux and resolution >= policy.min_resolution and resolution <= policy.max_resolution and @as(u64, @intCast(size)) <= compactCap(policy, ref.app, m) and seeds >= policy.min_seeders;
+            var upgrade: ?bool = true;
+            for (current) |file| {
+                if (file.episode_id != eid) continue;
+                if (!file.has_file) {
+                    upgrade = null;
+                    continue;
                 }
-                const seeds = @max(0, J.num(raw, "seeders") orelse 0);
-                const is_compact = allowed and initial_ok and !disallowed_3d and !remux and resolution >= policy.min_resolution and resolution <= policy.max_resolution and @as(u64, @intCast(size)) <= cap and seeds >= policy.min_seeders and !(J.flag(raw, "fullSeason") orelse false);
-                var upgrade: ?bool = true;
-                for (current) |file| {
-                    if (!file.has_file) {
-                        upgrade = null;
-                        continue;
-                    }
-                    const comparison = compare(profile, file.quality_id, file.format_score, qid, score);
-                    if (comparison.better == null) {
-                        if (upgrade != false) upgrade = null;
-                    } else if (!comparison.better.?) upgrade = false;
-                }
-                if (!allowed or !final_ok or disallowed_3d) upgrade = false;
-                const native_reason = if (J.items(raw, "rejections").len > 0) "Rejected by Arr; check the details in the source application." else if (!original) "Original language is unconfirmed." else if (disallowed_3d) "3D release excluded from the first copy." else if (!allowed) "Not approved by the native profile." else "Approved by the native profile; availability is estimated from seeders and size.";
-                const id = try J.hash(a, try std.fmt.allocPrint(a, "{d}:{s}", .{ indexer, guid }));
-                const candidate = Candidate{ .id = id, .title = release_title, .bytes = @intCast(size), .seeds = @intCast(@min(seeds, std.math.maxInt(u32))), .resolution = @intCast(resolution), .quality_id = qid, .quality = J.str(q, "name") orelse "Unknown", .format_score = score, .original_audio = original, .native_approved = allowed and !disallowed_3d, .compact = is_compact, .upgrade = upgrade, .reason = native_reason, .surround_hint = try surround(a, raw, release_title) };
-                const idx = candidates.items.len;
-                try candidates.append(a, candidate);
-                try releases.append(a, .{ .candidate = candidate, .guid = guid, .indexer_id = indexer, .info_hash = J.str(raw, "infoHash") });
-                if (is_compact) {
-                    if (compact == null or (candidate.surround_hint and !candidates.items[compact.?].surround_hint) or (candidate.surround_hint == candidates.items[compact.?].surround_hint and compactScore(candidate) > compactScore(candidates.items[compact.?]))) compact = idx;
-                }
-                if (allowed and final_ok and !disallowed_3d and seeds >= policy.min_seeders and upgrade != false) {
-                    const rank = qualityRank(profile, qid) orelse continue;
-                    if (!rank.allowed) continue;
-                    if (best == null) {
-                        best = idx;
-                    } else {
-                        const previous = candidates.items[best.?];
-                        const prev_rank = qualityRank(profile, previous.quality_id) orelse continue;
-                        if (rank.rank > prev_rank.rank or (rank.rank == prev_rank.rank and (score > previous.format_score or (score == previous.format_score and candidate.seeds > previous.seeds)))) best = idx;
-                    }
+                upgrade = compare(profile, file.quality_id, file.format_score, qid, score).better;
+            }
+            if (!strictly_approved or !allowed or !final_ok or disallowed_3d) upgrade = false;
+            const id = try J.hash(a, try std.fmt.allocPrint(a, "{d}:{d}:{s}", .{ eid, indexer, guid }));
+            const candidate = Candidate{ .episode_id = eid, .id = id, .title = release_title, .bytes = @intCast(size), .seeds = @intCast(@min(seeds, std.math.maxInt(u32))), .resolution = @intCast(resolution), .quality_id = qid, .quality = J.str(q, "name") orelse "Unknown", .format_score = score, .original_audio = language_ok, .native_approved = allowed and !disallowed_3d, .compact = is_compact, .upgrade = upgrade, .reason = if (queue_override and !strictly_approved) "Only the queue conflict is superseded for the compact stage; native quality, language and format safeguards remain enforced." else if (!allowed) "Rejected by Arr; check the details in the source application." else if (disallowed_3d) "3D release excluded from the first copy." else "Approved by the native profile; availability is estimated from seeders and size.", .surround_hint = try surround(a, raw, release_title) };
+            const idx = candidates.items.len;
+            try candidates.append(a, candidate);
+            try releases.append(a, .{ .candidate = candidate, .guid = guid, .indexer_id = indexer, .info_hash = J.str(raw, "infoHash") });
+            if (allowed and final_ok and seeds >= policy.min_seeders and upgrade != false) {
+                if (best == null) best = idx else {
+                    const previous = candidates.items[best.?];
+                    const before = qualityRank(profile, previous.quality_id) orelse continue;
+                    if (final_rank.?.rank > before.rank or (final_rank.?.rank == before.rank and (score > previous.format_score or (score == previous.format_score and candidate.seeds > previous.seeds)))) best = idx;
                 }
             }
         }
+        // Choose only among this episode's compact candidates.
+        for (candidates.items, 0..) |candidate, idx| if (candidate.episode_id == eid and candidate.compact) {
+            if (compact == null or (candidate.surround_hint and !candidates.items[compact.?].surround_hint) or (candidate.surround_hint == candidates.items[compact.?].surround_hint and compactScore(candidate) > compactScore(candidates.items[compact.?]))) compact = idx;
+        };
+        if (compact) |idx| try compact_choices.append(a, .{ .episode_id = eid, .candidate_id = candidates.items[idx].id });
+        if (best) |idx| try upgrade_choices.append(a, .{ .episode_id = eid, .candidate_id = candidates.items[idx].id });
+    };
+    if (original) |source| {
+        const id = try J.hash(a, try std.fmt.allocPrint(a, "existing:{s}", .{source.hash}));
+        const candidate = Candidate{ .id = id, .title = source.title, .bytes = source.bytes, .seeds = 0, .resolution = source.resolution, .quality_id = source.quality_id, .quality = "Existing queued release", .format_score = source.format_score, .original_audio = true, .native_approved = true, .compact = source.compact, .upgrade = if (source.compact) false else true, .reason = "Existing queued release; downloaded bytes are preserved." };
+        try candidates.append(a, candidate);
+        try releases.append(a, .{ .candidate = candidate, .guid = "", .indexer_id = 0, .info_hash = source.hash });
+        if (source.compact) {
+            compact_choices.clearRetainingCapacity();
+            try compact_choices.append(a, .{ .episode_id = 0, .candidate_id = id });
+        } else {
+            upgrade_choices.clearRetainingCapacity();
+            try upgrade_choices.append(a, .{ .episode_id = 0, .candidate_id = id });
+        }
     }
-    return .{ .report = .{ .target = ref, .title = title, .profile_name = J.str(profile, "name") orelse "Unknown", .initial_profile_name = J.str(initial_profile, "name"), .initial_profile_id = initial_id, .final_profile_id = final_id, .native_profile_name = J.str(native_profile, "name"), .upgrade_allowed = J.flag(profile, "upgradeAllowed") orelse false, .scope = manifest, .files = current, .candidates = candidates.items, .compact_candidate_id = if (compact) |idx| candidates.items[idx].id else null, .upgrade_candidate_id = if (best) |idx| candidates.items[idx].id else null, .searched = search_sources, .created_at_ms = std.Io.Timestamp.now(io, .real).toMilliseconds() }, .releases = releases.items };
+    return .{ .report = .{ .target = ref, .title = title, .profile_name = J.str(profile, "name") orelse "Unknown", .initial_profile_name = J.str(initial, "name"), .initial_profile_id = initial_id, .final_profile_id = final_id, .native_profile_name = J.str(native, "name"), .upgrade_allowed = J.flag(profile, "upgradeAllowed") orelse false, .original = original, .scope = manifest, .files = current, .candidates = candidates.items, .compact_selections = compact_choices.items, .upgrade_selections = upgrade_choices.items, .compact_candidate_id = if (compact_choices.items.len > 0) compact_choices.items[0].candidate_id else null, .upgrade_candidate_id = if (upgrade_choices.items.len > 0) upgrade_choices.items[0].candidate_id else null, .searched = search_sources, .created_at_ms = std.Io.Timestamp.now(io, .real).toMilliseconds() }, .releases = releases.items };
 }

@@ -14,33 +14,53 @@ class Upstream(BaseHTTPRequestHandler):
     conflict = False
     active_movie = False
     reject_compact = False
+    source_movie = False
+    original_state = 'downloading'
+    original_size = 15*1024**3
+    original_quality = 19
+    original_progress = .01
+    controls = []
+    selected = [1]
+    episode_files = {}
     def log_message(self,*args): pass
     def reply(self,data,status=200):
         body=json.dumps(data).encode(); self.send_response(status); self.send_header('Content-Type','application/json'); self.send_header('Content-Length',str(len(body))); self.end_headers();self.wfile.write(body)
     def do_GET(self):
         p=urlparse(self.path).path
-        if p=='/api/v3/series/9':return self.reply({'id':9,'title':'Fixture Series','qualityProfileId':1,'originalLanguage':{'id':1},'runtime':45})
-        if p=='/api/v2/torrents/files':return self.reply([{'name':f'Fixture.Series.S01E{n:02}.mkv','priority':7 if n==1 else 0} for n in (1,2,3,4)])
+        if p=='/api/v3/series/9':return self.reply({'id':9,'title':'Fixture Series','qualityProfileId':1,'originalLanguage':{'id':1},'runtime':45,'monitored':True})
+        if p=='/api/v2/torrents/info':return self.reply([{'hash':'c'*40,'name':'Fixture Series','size':self.original_size,'progress':self.original_progress,'state':self.original_state}])
+        if p=='/api/v2/torrents/files':return self.reply([{'name':f'Fixture.Series.S01E{n:02}.mkv','size':self.original_size//4,'priority':7 if n in self.selected else 0} for n in (1,2,3,4)])
         if p=='/api/v3/episode':return self.reply([{'id':449+n,'seriesId':9,'seasonNumber':1,'episodeNumber':n} for n in range(1,9)])
         if p.startswith('/api/v3/episode/'):
-            return self.reply({'id':int(p.rsplit('/',1)[1]),'seriesId':9,'hasFile':False,'episodeFileId':0})
+            return self.reply({'id':int(p.rsplit('/',1)[1]),'seriesId':9,'hasFile':int(p.rsplit('/',1)[1]) in self.episode_files,'episodeFileId':self.episode_files.get(int(p.rsplit('/',1)[1]),{}).get('id',0),'seasonNumber':1,'episodeNumber':int(p.rsplit('/',1)[1])-449})
+        if p.startswith('/api/v3/episodefile/'):
+            return self.reply(next(x for x in self.episode_files.values() if x['id']==int(p.rsplit('/',1)[1])))
         if p=='/api/v3/parse':
             title=parse_qs(urlparse(self.path).query)['title'][0]
             number=int(title.split('S01E')[1][:2])
             return self.reply({'parsedEpisodeInfo':{'seriesTitle':'Fixture Series','seasonNumber':1,'episodeNumbers':[number]}})
         if p=='/health':return self.reply({'healthy':self.healthy})
-        if p=='/api/v3/movie/48':return self.reply({'id':48,'title':'Fixture','qualityProfileId':1,'originalLanguage':{'id':1},'hasFile':self.file is not None,'movieFile':self.file or {}})
+        if p=='/api/v3/movie/48':return self.reply({'id':48,'title':'Fixture','qualityProfileId':1,'originalLanguage':{'id':1},'monitored':True,'hasFile':self.file is not None,'movieFile':self.file or {}})
         profiles=[{'id':id,'name':name,'upgradeAllowed':True,'cutoff':19,'cutoffFormatScore':1000,'minFormatScore':0,'minUpgradeFormatScore':1,'formatItems':[{'format':1,'score':20},{'format':2,'score':score}],'items':[{'quality':{'id':7,'name':'Bluray-1080p'},'allowed':id!=3},{'quality':{'id':19,'name':'Bluray-2160p'},'allowed':id!=2}]} for id,name,score in [(1,'Fixture profile',1000),(2,'Compact 1080p',1000),(3,'Final 4K',2000)]]
         if p=='/api/v3/qualityprofile':return self.reply(profiles)
         if p.startswith('/api/v3/qualityprofile/'):
             profile=next((x for x in profiles if x['id']==int(p.rsplit('/',1)[1])),None)
             return self.reply(profile,200 if profile else 404)
         if p=='/api/v3/release':
-            return self.reply([{'guid':g,'title':g,'indexerId':1,'size':size,'seeders':30,'quality':{'quality':{'id':qid,'name':name,'resolution':res}},'languages':[{'id':1}],'customFormatScore':score,'customFormats':[{'id':1 if qid==7 else 2}],'approved':not (self.reject_compact and g=='compact'),'rejected':self.reject_compact and g=='compact','temporarilyRejected':False,'downloadAllowed':True,'protocol':'torrent','infoHash':h*40} for g,size,qid,name,res,score,h in [('compact',2*1024**3,7,'Bluray-1080p',1080,20,'a'),('upgrade',15*1024**3,19,'Bluray-2160p',2160,1000,'b')]])
-        if p=='/api/v3/queue':return self.reply({'totalRecords':8,'records':([{'movieId':48,'downloadId':'d'*40}] if self.active_movie else []) + [{'seriesId':9,'episodeId':449+n,'downloadId':'c'*40} for n in range(1,9)]})
+            releases=[{'guid':g,'title':g,'indexerId':1,'size':size,'seeders':30,'quality':{'quality':{'id':qid,'name':name,'resolution':res}},'languages':[{'id':1}],'customFormatScore':score,'customFormats':[{'id':1 if qid==7 else 2}],'approved':not (self.reject_compact and g=='compact'),'rejected':self.reject_compact and g=='compact','temporarilyRejected':False,'downloadAllowed':True,'protocol':'torrent','infoHash':h*40} for g,size,qid,name,res,score,h in [('compact',2*1024**3,7,'Bluray-1080p',1080,20,'a'),('upgrade',15*1024**3,19,'Bluray-2160p',2160,1000,'b')]]
+            eid=parse_qs(urlparse(self.path).query).get('episodeId',[None])[0]
+            if eid:
+                for item in releases:
+                    item.update(guid=item['guid']+'-'+eid,episodeNumbers=[int(eid)-449],seasonNumber=1,seriesId=9)
+                    if item['quality']['quality']['id']==7:item['size']=700*1024**2
+            return self.reply(releases)
+        if p=='/api/v3/queue':return self.reply({'totalRecords':8,'records':([{'movieId':48,'downloadId':'d'*40}] if self.active_movie else []) + ([{'movieId':48,'downloadId':'c'*40,'quality':{'quality':{'id':self.original_quality,'resolution':2160 if self.original_quality==19 else 1080}},'customFormatScore':1000 if self.original_quality==19 else 20,'customFormats':[{'id':2 if self.original_quality==19 else 1}]}] if self.source_movie else []) + [{'seriesId':9,'episodeId':449+n,'downloadId':'c'*40,'quality':{'quality':{'id':19,'resolution':2160}},'customFormatScore':1000,'customFormats':[{'id':2}]} for n in range(1,9)]})
         return self.reply({},404)
     def do_POST(self):
-        p=self.path; body=json.loads(self.rfile.read(int(self.headers.get('Content-Length','0'))))
+        p=self.path; raw=self.rfile.read(int(self.headers.get('Content-Length','0')))
+        if p in ['/api/v2/torrents/stop','/api/v2/torrents/start']:
+            type(self).controls.append(p.rsplit('/',1)[1]);type(self).original_state='stoppedDL' if p.endswith('/stop') else 'downloading';return self.reply({})
+        body=json.loads(raw)
         if p=='/ownership/claim':
             if self.conflict:return self.reply({},409)
             type(self).owner=True; return self.reply({'token':'private-owner-token'})
@@ -50,7 +70,7 @@ class Upstream(BaseHTTPRequestHandler):
 
 class ControllerContract(unittest.TestCase):
     def setUp(self):
-        Upstream.file=None;Upstream.grabs=[];Upstream.owner=False;Upstream.healthy=True;Upstream.conflict=False;Upstream.active_movie=False;Upstream.reject_compact=False
+        Upstream.file=None;Upstream.grabs=[];Upstream.owner=False;Upstream.healthy=True;Upstream.conflict=False;Upstream.active_movie=False;Upstream.reject_compact=False;Upstream.source_movie=False;Upstream.original_state='downloading';Upstream.original_size=15*1024**3;Upstream.original_quality=19;Upstream.original_progress=.01;Upstream.controls=[];Upstream.selected=[1];Upstream.episode_files={}
         self.server=ThreadingHTTPServer(('127.0.0.1',0),Upstream)
         self.thread=threading.Thread(target=self.server.serve_forever,daemon=True);self.thread.start()
         self.temp=tempfile.TemporaryDirectory(prefix='prontarr-controller-');self.folder=Path(self.temp.name)
@@ -60,7 +80,7 @@ class ControllerContract(unittest.TestCase):
         self.env=os.environ|{'PRONTARR_DB':str(self.folder/'db.sqlite'),'PRONTARR_CONNECTIONS':str(path)}
         self.log=tempfile.TemporaryFile();self.process=None;self.start()
     def start(self):
-        self.process=subprocess.Popen([str(ROOT/'zig-out/bin/prontarr')],cwd=ROOT,env=self.env,stdout=self.log,stderr=self.log)
+        self.process=subprocess.Popen([os.environ.get('PRONTARR_TEST_BINARY', str(ROOT/'zig-out/bin/prontarr'))],cwd=ROOT,env=self.env,stdout=self.log,stderr=self.log)
         for _ in range(100):
             if self.process.poll() is not None:self.log.seek(0);raise AssertionError(self.log.read().decode())
             try:
@@ -165,6 +185,83 @@ class ControllerContract(unittest.TestCase):
         self.assertEqual(detail['job']['error_code'],'ExistingDownloadNeedsAnalysis')
         self.assertEqual(Upstream.grabs,[]);self.assertFalse(Upstream.owner)
 
+    def standalone(self, automatic=False):
+        self.stop()
+        path=self.folder/'connections.json';config=json.loads(path.read_text())
+        config.pop('coordinator',None)
+        config['execution'].update(standalone=True,automatic=automatic,allow_all_movies=True,allow_all_series=not automatic)
+        path.write_text(json.dumps(config));self.start()
+
+    def original_plan(self):
+        status,data,_=request('/api/jobs',{'target':{'app':'radarr','media_id':48,'original_hash':'c'*40}})
+        self.assertEqual(status,202);self.wait_stage(data['id'],'ready');return data['id']
+
+    def test_standalone_original_upgrade_is_paused_and_resumed_without_regrab(self):
+        self.standalone();Upstream.source_movie=True
+        id=self.original_plan();self.assertEqual(request(f'/api/jobs/{id}/start',{})[0],202)
+        self.wait_stage(id,'compact');time.sleep(.3)
+        self.assertEqual(Upstream.controls,['stop']);self.assertEqual(Upstream.grabs,['compact'])
+        self.stop();self.start();time.sleep(2.3)
+        self.assertEqual(Upstream.grabs,['compact'])
+        Upstream.file={'id':10,'quality':{'quality':{'id':7}},'customFormatScore':20}
+        self.wait_stage(id,'upgrading');time.sleep(.2)
+        self.assertIn('start',Upstream.controls);self.assertEqual(Upstream.grabs,['compact'])
+        Upstream.file={'id':11,'quality':{'quality':{'id':19}},'customFormatScore':1000}
+        self.wait_stage(id,'completed')
+        with sqlite3.connect(self.folder/'db.sqlite') as db:
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM live_ownership').fetchone()[0],0)
+        self.assertFalse(Upstream.owner)
+
+    def test_standalone_adopts_existing_compact_without_pausing_or_duplicate(self):
+        self.standalone();Upstream.source_movie=True;Upstream.original_size=2*1024**3;Upstream.original_quality=7;Upstream.original_progress=.7
+        id=self.original_plan();request(f'/api/jobs/{id}/start',{});self.wait_stage(id,'compact')
+        self.assertEqual(Upstream.controls,[]);self.assertEqual(Upstream.grabs,[])
+        Upstream.file={'id':10,'quality':{'quality':{'id':7}},'customFormatScore':20}
+        self.wait_stage(id,'upgrading');time.sleep(.2)
+        self.assertEqual(Upstream.grabs,['upgrade']);self.assertEqual(Upstream.controls,[])
+
+    def test_standalone_manual_pause_and_existing_progress_are_preserved(self):
+        for state,progress,reason in [('stoppedDL',.01,'RespectManualPause'),('downloading',.5,'RespectExistingProgress')]:
+            self.standalone();Upstream.source_movie=True;Upstream.original_state=state;Upstream.original_progress=progress
+            id=self.original_plan();request(f'/api/jobs/{id}/start',{})
+            detail=self.wait_stage(id,'review');self.assertEqual(detail['job']['error_code'],reason)
+            self.assertEqual(Upstream.controls,[]);self.assertEqual(Upstream.grabs,[])
+            request(f'/api/jobs/{id}/cancel',{});self.wait_stage(id,'cancelled')
+            request(f'/api/jobs/{id}/analyze',{});self.wait_stage(id,'ready')
+
+    def test_automatic_intake_is_durable_and_uses_no_legacy_coordinator(self):
+        Upstream.source_movie=True;self.standalone(automatic=True)
+        for _ in range(100):
+            jobs=request('/api/jobs')[1]['items']
+            if jobs and jobs[0]['stage']=='compact':break
+            time.sleep(.1)
+        self.assertEqual(len(jobs),1);self.assertEqual(jobs[0]['stage'],'compact')
+        self.assertEqual(Upstream.grabs,['compact']);self.assertFalse(Upstream.owner)
+        self.stop();self.start();time.sleep(2.3)
+        self.assertEqual(len(request('/api/jobs')[1]['items']),1);self.assertEqual(Upstream.grabs,['compact'])
+
+    def test_pack_waits_for_all_compact_imports_before_resuming_original(self):
+        self.standalone();Upstream.selected=[1,2]
+        status,data,_=request('/api/jobs',{'target':{'app':'sonarr','media_id':9,'original_hash':'c'*40}})
+        self.assertEqual(status,202);id=data['id'];self.wait_stage(id,'ready')
+        self.assertEqual(request(f'/api/jobs/{id}/start',{})[0],202);self.wait_stage(id,'compact');time.sleep(.2)
+        self.assertEqual(Upstream.grabs,['compact-450','compact-451']);self.assertEqual(Upstream.controls,['stop'])
+        Upstream.episode_files[450]={'id':10,'quality':{'quality':{'id':7}},'customFormatScore':20}
+        time.sleep(2.3);self.assertEqual(request(f'/api/jobs/{id}')[1]['job']['stage'],'compact');self.assertEqual(Upstream.controls,['stop'])
+        Upstream.episode_files[451]={'id':11,'quality':{'quality':{'id':7}},'customFormatScore':20}
+        self.wait_stage(id,'upgrading');time.sleep(.2);self.assertIn('start',Upstream.controls)
+        self.assertEqual(Upstream.grabs,['compact-450','compact-451'])
+        Upstream.episode_files[450]={'id':20,'quality':{'quality':{'id':19}},'customFormatScore':1000}
+        time.sleep(2.3);self.assertEqual(request(f'/api/jobs/{id}')[1]['job']['stage'],'upgrading')
+        Upstream.episode_files[451]={'id':21,'quality':{'quality':{'id':19}},'customFormatScore':1000}
+        self.wait_stage(id,'completed')
+
+    def test_cancelling_takeover_resumes_only_the_original_and_keeps_compact(self):
+        self.standalone();Upstream.source_movie=True
+        id=self.original_plan();request(f'/api/jobs/{id}/start',{});self.wait_stage(id,'compact');time.sleep(.2)
+        request(f'/api/jobs/{id}/cancel',{});self.wait_stage(id,'cancelled')
+        self.assertEqual(Upstream.controls,['stop','start']);self.assertEqual(Upstream.grabs,['compact'])
+
     def test_pack_scope_uses_file_priorities_not_eight_queue_rows(self):
         status,data,_=request('/api/jobs',{'target':{'app':'sonarr','media_id':9,'original_hash':'c'*40}})
         self.assertEqual(status,202)
@@ -179,7 +276,7 @@ class ControllerContract(unittest.TestCase):
     def test_whitelist_and_second_process_lock(self):
         status,data,_=request('/api/jobs',{'target':{'app':'radarr','media_id':49}})
         self.assertEqual(request(f'/api/jobs/{data["id"]}/start',{})[0],409)
-        other=subprocess.run([str(ROOT/'zig-out/bin/prontarr')],cwd=ROOT,env=self.env,capture_output=True,timeout=5)
+        other=subprocess.run([os.environ.get('PRONTARR_TEST_BINARY', str(ROOT/'zig-out/bin/prontarr'))],cwd=ROOT,env=self.env,capture_output=True,timeout=5)
         self.assertNotEqual(other.returncode,0);self.assertIn(b'ControllerAlreadyRunning',other.stderr)
 
 if __name__=='__main__':unittest.main(verbosity=2)

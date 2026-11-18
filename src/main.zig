@@ -13,6 +13,8 @@ const App = struct {
     pool: *zqlite.Pool,
     connections: transport.Config,
     controller: *controller.Runtime,
+    public_url: ?[]const u8 = null,
+    public_host: ?[]const u8 = null,
     observation_lock: std.Io.Mutex = .init,
 
     pub fn dispatch(self: *App, action: httpz.Action(*App), req: *httpz.Request, res: *httpz.Response) !void {
@@ -21,10 +23,10 @@ const App = struct {
         res.header("Referrer-Policy", "no-referrer");
         res.header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
         const host = req.header("host") orelse "";
-        if (!std.mem.eql(u8, host, "127.0.0.1:5882") and !std.mem.eql(u8, host, "localhost:5882")) return failure(res, 403, "Host is not allowed; use localhost:5882.");
+        if (!std.mem.eql(u8, host, "127.0.0.1:5882") and !std.mem.eql(u8, host, "localhost:5882") and !(self.public_host != null and std.mem.eql(u8, host, self.public_host.?))) return failure(res, 403, "Host is not allowed; use localhost:5882.");
         if (req.header("origin")) |origin| {
             const allowed = [_][]const u8{ "http://127.0.0.1:5882", "http://localhost:5882", "http://127.0.0.1:5173", "http://localhost:5173" };
-            var ok = false;
+            var ok = self.public_url != null and std.mem.eql(u8, origin, self.public_url.?);
             for (allowed) |value| if (std.mem.eql(u8, origin, value)) {
                 ok = true;
             };
@@ -32,7 +34,7 @@ const App = struct {
         }
         if (req.method == .POST or req.method == .PUT) {
             const content_type = req.header("content-type") orelse "";
-            if (!std.mem.startsWith(u8, content_type, "application/json")) return failure(res, 415, "Envie application/json.");
+            if (!std.mem.startsWith(u8, content_type, "application/json")) return failure(res, 415, "Send application/json.");
         }
         action(self, req, res) catch |err| {
             std.log.err("request failed: {s}", .{@errorName(err)});
@@ -89,7 +91,9 @@ pub fn main(init: std.process.Init) !void {
     var runtime = controller.Runtime{ .io = init.io, .allocator = init.gpa, .pool = pool, .config = connections };
     var background = try init.io.concurrent(controller.Runtime.run, .{&runtime});
     defer background.cancel(init.io) catch {};
-    var app = App{ .io = init.io, .pool = pool, .connections = connections, .controller = &runtime };
+    const public_url = init.environ_map.get("PRONTARR_PUBLIC_URL");
+    const public_host = if (public_url) |url| try transport.publicAuthority(url) else null;
+    var app = App{ .public_url = public_url, .public_host = public_host, .io = init.io, .pool = pool, .connections = connections, .controller = &runtime };
     const bind = init.environ_map.get("PRONTARR_BIND") orelse "127.0.0.1";
     if (!std.mem.eql(u8, bind, "127.0.0.1") and !std.mem.eql(u8, bind, "0.0.0.0")) return error.InvalidListenAddress;
     var server = try httpz.Server(*App).init(init.io, init.gpa, .{
@@ -120,7 +124,7 @@ pub fn main(init: std.process.Init) !void {
     router.post("/api/jobs/:id/analyze", analyzeLiveJob, .{});
     router.get("/api/library", library, .{});
     router.get("/api/library/:app/:id/episodes", libraryEpisodes, .{});
-    std.log.info("Prontarr 0.4.0-alpha.1 — http://127.0.0.1:5882 — controlled execution available", .{});
+    std.log.info("Prontarr 0.4.0-alpha.2 — http://127.0.0.1:5882 — controlled execution available", .{});
     try server.listen();
 }
 
@@ -137,7 +141,7 @@ fn css(_: *App, _: *httpz.Request, res: *httpz.Response) !void {
     res.body = @embedFile("app.css");
 }
 fn health(app: *App, _: *httpz.Request, res: *httpz.Response) !void {
-    try res.json(.{ .status = "ok", .version = "0.4.0-alpha.1", .mode = if (app.connections.execution.enabled) "controlled" else "read_only", .observation_available = true, .live_actions_enabled = app.connections.execution.enabled }, .{});
+    try res.json(.{ .status = "ok", .version = "0.4.0-alpha.2", .mode = if (app.connections.execution.enabled) "controlled" else "read_only", .observation_available = true, .live_actions_enabled = app.connections.execution.enabled }, .{});
 }
 
 fn connectionInfo(app: *App, _: *httpz.Request, res: *httpz.Response) !void {
@@ -146,7 +150,7 @@ fn connectionInfo(app: *App, _: *httpz.Request, res: *httpz.Response) !void {
     inline for (.{ "radarr", "sonarr", "qbittorrent" }, 0..) |name, i| {
         items[i] = .{ .name = name, .configured = @field(app.connections, name) != null };
     }
-    try res.json(.{ .items = items, .live_actions_enabled = false }, .{});
+    try res.json(.{ .items = items, .live_actions_enabled = app.connections.execution.enabled }, .{});
 }
 fn observeLive(app: *App, _: *httpz.Request, res: *httpz.Response) !void {
     if (!app.observation_lock.tryLock()) return failure(res, 409, "An observation is already running. Wait for it to finish.");

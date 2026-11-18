@@ -32,6 +32,8 @@ type Report = {
   native_profile_name?: string | null;
   compact_candidate_id: string | null;
   upgrade_candidate_id: string | null;
+  compact_selections?: { candidate_id: string }[];
+  upgrade_selections?: { candidate_id: string }[];
   candidates: Candidate[];
   scope: {
     verified: boolean;
@@ -129,7 +131,9 @@ export function Jobs() {
     report?.candidates.filter(
       (c) =>
         c.id === report.compact_candidate_id ||
-        c.id === report.upgrade_candidate_id,
+        c.id === report.upgrade_candidate_id ||
+        report.compact_selections?.some((choice) => choice.candidate_id === c.id) ||
+        report.upgrade_selections?.some((choice) => choice.candidate_id === c.id),
     ) ?? [];
   return (
     <section className="jobs-page">
@@ -343,7 +347,7 @@ export function Jobs() {
             selectedCandidates.map((c) => (
               <div className="candidate-choice" key={c.id}>
                 <strong>
-                  {c.id === report?.compact_candidate_id
+                  {c.id === report?.compact_candidate_id || report?.compact_selections?.some((choice) => choice.candidate_id === c.id)
                     ? t("First copy")
                     : "Upgrade"}
                 </strong>

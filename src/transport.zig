@@ -9,6 +9,10 @@ pub const Connection = struct {
     basic_auth: ?[]const u8 = null,
 };
 pub const Execution = struct {
+    standalone: bool = false,
+    automatic: bool = false,
+    allow_all_movies: bool = false,
+    allow_all_series: bool = false,
     enabled: bool = false,
     allowed_movie_ids: []const i64 = &.{},
     allowed_series_ids: []const i64 = &.{},
@@ -54,6 +58,15 @@ pub fn validate(connection: Connection) !void {
     }
 }
 
+pub fn publicAuthority(url: []const u8) ![]const u8 {
+    try validate(.{ .url = url });
+    if (!std.mem.startsWith(u8, url, "https://")) return error.PublicUrlRequiresHttps;
+    const authority = url[8..];
+    if (authority.len == 0 or authority.len > 255) return error.InvalidPublicUrl;
+    for (authority) |char| if (!std.ascii.isAlphanumeric(char) and std.mem.findScalar(u8, ".-:", char) == null) return error.InvalidPublicUrl;
+    return authority;
+}
+
 pub fn load(init_ctx: std.process.Init) !Config {
     const path = init_ctx.environ_map.get("PRONTARR_CONNECTIONS") orelse return .{};
     const stat = try std.Io.Dir.cwd().statFile(init_ctx.io, path, .{});
@@ -73,7 +86,8 @@ pub fn load(init_ctx: std.process.Init) !Config {
         if (ids.len > 1000) return error.InvalidExecutionScope;
         for (ids) |id| if (id <= 0) return error.InvalidExecutionScope;
     }
-    if (config.execution.enabled and (config.coordinator == null or config.vpn_health == null)) return error.ExecutionRequiresCoordinatorAndVpnHealth;
+    if (config.execution.automatic and (!config.execution.enabled or !config.execution.standalone)) return error.AutomaticExecutionRequiresStandaloneMode;
+    if (config.execution.enabled and ((!config.execution.standalone and config.coordinator == null) or config.vpn_health == null)) return error.ExecutionRequiresCoordinatorAndVpnHealth;
     return config;
 }
 

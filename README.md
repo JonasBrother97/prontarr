@@ -16,7 +16,7 @@ A two-stage download companion for **Radarr, Sonarr and qBittorrent**.
 
 </div>
 
-> **Alpha — controlled execution pilot.** Live actions are disabled by default.
+> **Alpha — guarded standalone execution.** Live actions are disabled by default.
 > Read the [execution requirements and recovery guide](docs/execution.md) before enabling them.
 
 ## Why Prontarr?
@@ -62,7 +62,7 @@ docker run -d --name prontarr \
   --restart unless-stopped \
   -p 127.0.0.1:5882:5882 \
   -v prontarr-data:/data \
-  jonasbrother97/prontarr:0.4.0-alpha.1
+  jonasbrother97/prontarr:0.4.0-alpha.2
 ```
 
 Open [http://127.0.0.1:5882](http://127.0.0.1:5882). This starts the UI and simulator with live execution disabled. Configure private service connections using the [connection guide](docs/connections.md), then follow the [execution guide](docs/execution.md) for the guarded pilot.
@@ -86,8 +86,8 @@ For UI development, run `npm run dev --prefix frontend` alongside the backend. R
 
 ## Current boundaries
 
-- This release supports a controlled, explicitly allowed execution pilot; general automatic intake and multi-episode compact acquisition are still in development.
-- A healthy VPN check and exclusive ownership coordinator are required by the published pilot.
+- Standalone mode supports automatic monitored queue intake, existing torrent adoption/resume and selected-episode compact acquisition. Execution requires explicit configuration.
+- A healthy VPN check and durable exclusive ownership are required. Standalone mode keeps ownership in SQLite; the legacy external coordinator is optional.
 - The server has no built-in authentication. Default local bindings and Host/Origin checks limit access; remote deployment needs a correctly configured authentication proxy.
 - Prontarr is a companion to existing Arr applications, not an indexer, download client or media server.
 - Simulation inputs are synthetic; live analysis obtains release metadata from native APIs.

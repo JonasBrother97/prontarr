@@ -128,7 +128,7 @@ class ObserveContracts(unittest.TestCase):
     @classmethod
     def start(cls):
         env = os.environ | {'PRONTARR_DB': str(cls.folder/'test.sqlite'), 'PRONTARR_CONNECTIONS': str(cls.config_file)}
-        cls.process = subprocess.Popen([str(ROOT/'zig-out/bin/prontarr')], env=env, cwd=ROOT, stdout=cls.log, stderr=cls.log)
+        cls.process = subprocess.Popen([os.environ.get('PRONTARR_TEST_BINARY', str(ROOT/'zig-out/bin/prontarr'))], env=env, cwd=ROOT, stdout=cls.log, stderr=cls.log)
         for _ in range(100):
             if cls.process.poll() is not None:
                 cls.log.seek(0)
@@ -265,7 +265,7 @@ class ObserveContracts(unittest.TestCase):
         self.config_file.chmod(0o644)
         env = os.environ | {'PRONTARR_DB': str(self.folder/'test.sqlite'), 'PRONTARR_CONNECTIONS': str(self.config_file)}
         try:
-            result = subprocess.run([str(ROOT/'zig-out/bin/prontarr')], env=env, cwd=ROOT, capture_output=True, timeout=5)
+            result = subprocess.run([os.environ.get('PRONTARR_TEST_BINARY', str(ROOT/'zig-out/bin/prontarr'))], env=env, cwd=ROOT, capture_output=True, timeout=5)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn(b'ConnectionsFileMustBePrivate', result.stderr)
             self.assertNotIn(b'fixture-secret', result.stderr)

@@ -51,7 +51,7 @@ class ApiTests(unittest.TestCase):
 
     @classmethod
     def start(cls):
-        cls.process = subprocess.Popen([str(ROOT / 'zig-out/bin/prontarr')], cwd=ROOT, env=cls.env, stdout=cls.log, stderr=cls.log)
+        cls.process = subprocess.Popen([os.environ.get('PRONTARR_TEST_BINARY', str(ROOT / 'zig-out/bin/prontarr'))], cwd=ROOT, env=cls.env, stdout=cls.log, stderr=cls.log)
         for _ in range(100):
             if cls.process.poll() is not None:
                 cls.log.seek(0)
@@ -84,6 +84,16 @@ class ApiTests(unittest.TestCase):
         value = json.loads((ROOT / 'docs/example-input.json').read_text())
         for app in ('radarr_profiles','sonarr_profiles'):value['policy'].setdefault(app, {'initial_id':None,'final_id':None})
         return value
+
+    def test_explicit_public_origin_allows_only_the_configured_proxy_host(self):
+        cls=type(self);cls.stop();cls.env['PRONTARR_PUBLIC_URL']='https://app.example.test'
+        try:
+            cls.start()
+            self.assertEqual(request('/api/health',headers={'Host':'app.example.test','Origin':'https://app.example.test'})[0],200)
+            self.assertEqual(request('/api/health',headers={'Host':'other.example.test'})[0],403)
+            self.assertEqual(request('/api/health',headers={'Host':'app.example.test','Origin':'https://other.example.test'})[0],403)
+        finally:
+            cls.stop();cls.env.pop('PRONTARR_PUBLIC_URL');cls.start()
 
     def test_health_explicitly_disables_live_actions(self):
         status, body, headers = request('/api/health')

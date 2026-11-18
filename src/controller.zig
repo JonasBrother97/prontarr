@@ -9,6 +9,8 @@ const A = std.mem.Allocator;
 pub const Stage = enum { queued, analyzing, ready, claiming, compact, upgrading, completed, review, cancelled };
 pub const State = struct {
     generation: i64 = 1,
+    automatic: bool = false,
+    adopt_original: bool = false,
     target: P.Ref,
     policy: E.Policy = .{},
     stage: Stage = .queued,
@@ -16,6 +18,7 @@ pub const State = struct {
     token: ?[]const u8 = null,
     compact_hash: ?[]const u8 = null,
     upgrade_hash: ?[]const u8 = null,
+    upgrade_selection_ids: []const []const u8 = &.{},
     original_stopped: bool = false,
     baseline: []const P.FileState = &.{},
     error_code: ?[]const u8 = null,
@@ -33,7 +36,11 @@ pub const Runtime = struct {
     pool: *DB.Pool,
     config: T.Config,
     last_job_id: i64 = 0,
+    next_scan_ms: i64 = 0,
     pub fn create(self: *Runtime, a: A, target: P.Ref, policy: E.Policy) !i64 {
+        return self.createInternal(a, target, policy, false);
+    }
+    fn createInternal(self: *Runtime, a: A, target: P.Ref, policy: E.Policy, automatic: bool) !i64 {
         try P.validate(target);
         var canonical = target;
         const ids = try a.dupe(i64, target.episode_ids);
@@ -41,7 +48,7 @@ pub const Runtime = struct {
         canonical.episode_ids = ids;
         const key = try std.json.Stringify.valueAlloc(a, canonical, .{});
         const now = std.Io.Timestamp.now(self.io, .real).toMilliseconds();
-        const state = State{ .target = canonical, .policy = policy, .created_at_ms = now, .updated_at_ms = now };
+        const state = State{ .automatic = automatic, .target = canonical, .policy = policy, .created_at_ms = now, .updated_at_ms = now };
         const value = try std.json.Stringify.valueAlloc(a, state, .{});
         const db = try self.pool.acquire(self.io);
         defer self.pool.release(self.io, db);
@@ -80,7 +87,7 @@ pub const Runtime = struct {
     pub fn requestStart(self: *Runtime, a: A, id: i64) !void {
         var state = try self.load(a, id);
         if (!self.allowed(state.target)) return error.ExecutionNotAllowed;
-        if (state.target.original_hash != null) return error.OriginalUpgradeNeedsVerification;
+
         if (state.stage != .ready) return error.JobNotReady;
         if (state.analysis == null) return error.AnalysisMissing;
         const report = state.analysis.?.report;
@@ -101,7 +108,7 @@ pub const Runtime = struct {
     }
     pub fn reanalyze(self: *Runtime, a: A, id: i64) !void {
         var state = try self.load(a, id);
-        if (state.token != null or state.original_stopped or (state.stage != .ready and state.stage != .review and state.stage != .cancelled and state.stage != .completed)) return error.JobBusy;
+        if (state.cancel_requested or state.token != null or state.original_stopped or (state.stage != .ready and state.stage != .review and state.stage != .cancelled and state.stage != .completed)) return error.JobBusy;
         const db = try self.pool.acquire(self.io);
         {
             defer self.pool.release(self.io, db);
@@ -116,11 +123,14 @@ pub const Runtime = struct {
         state.compact_hash = null;
         state.upgrade_hash = null;
         state.baseline = &.{};
+        state.upgrade_selection_ids = &.{};
+        state.adopt_original = false;
         state.generation += 1;
         try self.save(a, id, &state, "analysis_requested", "New analysis requested with current default profiles and limits.");
     }
     pub fn allowed(self: *const Runtime, ref: P.Ref) bool {
         if (!self.config.execution.enabled) return false;
+        if ((ref.app == .radarr and self.config.execution.allow_all_movies) or (ref.app == .sonarr and self.config.execution.allow_all_series)) return true;
         const ids = if (ref.app == .radarr) self.config.execution.allowed_movie_ids else self.config.execution.allowed_series_ids;
         for (ids) |id| if (id == ref.media_id) {
             return true;
@@ -159,6 +169,10 @@ pub const Runtime = struct {
         }
     }
     fn tick(self: *Runtime, a: A) !void {
+        if (self.config.execution.automatic and self.next_scan_ms <= std.Io.Timestamp.now(self.io, .real).toMilliseconds()) {
+            self.next_scan_ms = std.Io.Timestamp.now(self.io, .real).toMilliseconds() + 15000;
+            self.scan(a) catch |err| std.log.warn("automatic intake: {s}", .{@errorName(err)});
+        }
         const jobs = try self.summaries(a);
         var offset: usize = 0;
         for (jobs, 0..) |job, index| {
@@ -193,6 +207,16 @@ pub const Runtime = struct {
                     state.stage = .ready;
                     state.error_code = null;
                     try self.save(a, job.id, &state, "analysis_ready", "Analysis saved; no release was downloaded.");
+                    if (state.automatic) {
+                        if (allFiles(analysis.report.files)) {
+                            state.stage = .completed;
+                            try self.save(a, job.id, &state, "already_available", "A library copy is already available; native upgrades remain unchanged.");
+                        } else self.requestStart(a, job.id) catch |err| {
+                            state.stage = .review;
+                            state.error_code = @errorName(err);
+                            try self.save(a, job.id, &state, "needs_review", @errorName(err));
+                        };
+                    }
                     return;
                 },
                 .claiming, .compact, .upgrading => {
@@ -220,12 +244,85 @@ pub const Runtime = struct {
             }
         }
     }
+    fn readPolicy(self: *Runtime, a: A) !E.Policy {
+        const db = try self.pool.acquire(self.io);
+        defer self.pool.release(self.io, db);
+        if (try db.row("SELECT policy FROM settings WHERE id=1", .{})) |row| {
+            defer row.deinit();
+            return std.json.parseFromSliceLeaky(E.Policy, a, row.text(0), .{});
+        }
+        return .{};
+    }
+    fn scan(self: *Runtime, a: A) !void {
+        try self.vpn(a);
+        const qb = self.config.qbittorrent orelse return error.ConnectionNotConfigured;
+        const torrents = try P.get(a, qb, "/api/v2/torrents/info");
+        if (torrents != .array) return error.InvalidUpstreamResponse;
+        const policy = try self.readPolicy(a);
+        for ([_]P.AppKind{ .radarr, .sonarr }) |app| {
+            const conn = P.connection(self.config, app) catch continue;
+            const queue = try P.get(a, conn, "/api/v3/queue?page=1&pageSize=1000");
+            if ((J.num(queue, "totalRecords") orelse 1001) > 1000) continue;
+            for (J.items(queue, "records")) |record| {
+                const mid = J.num(record, if (app == .radarr) "movieId" else "seriesId") orelse continue;
+                const hash = J.str(record, "downloadId") orelse continue;
+                if (!J.validHash(hash)) continue;
+                const ref = P.Ref{ .app = app, .media_id = mid, .original_hash = try std.ascii.allocLowerString(a, hash) };
+                if (!self.allowed(ref)) continue;
+                {
+                    const db = try self.pool.acquire(self.io);
+                    defer self.pool.release(self.io, db);
+                    if (try db.row("SELECT 1 FROM intake_seen WHERE app=?1 AND media_id=?2 AND hash=?3", .{ @tagName(app), mid, ref.original_hash.? })) |row| {
+                        row.deinit();
+                        continue;
+                    }
+                    if (try db.row("SELECT 1 FROM live_jobs WHERE json_extract(state,'$.target.app')=?1 AND json_extract(state,'$.target.media_id')=?2 AND (json_extract(state,'$.stage') IN ('queued','analyzing','claiming','compact','upgrading') OR json_extract(state,'$.token') IS NOT NULL)", .{ @tagName(app), mid })) |row| {
+                        row.deinit();
+                        continue;
+                    }
+                }
+                var torrent: ?J.Value = null;
+                for (J.array(torrents)) |item| if (std.ascii.eqlIgnoreCase(J.str(item, "hash") orelse "", hash)) {
+                    torrent = item;
+                    break;
+                };
+                const info = torrent orelse continue;
+                const status = J.str(info, "state") orelse continue;
+                if (std.mem.startsWith(u8, status, "stopped") or std.mem.startsWith(u8, status, "paused") or std.mem.eql(u8, status, "error") or std.mem.eql(u8, status, "missingFiles")) continue;
+                const progress = J.field(info, "progress");
+                const fraction: f64 = if (progress == .float) progress.float else if (progress == .integer) @floatFromInt(progress.integer) else continue;
+                if (!std.math.isFinite(fraction) or fraction < 0 or fraction >= 1) continue;
+                const resolution = J.num(J.field(J.field(record, "quality"), "quality"), "resolution") orelse 0;
+                if (fraction >= 0.1 and resolution > 1080) continue;
+                const m = try P.media(a, self.config, ref);
+                if (!(J.flag(m, "monitored") orelse false)) continue;
+                if (app == .radarr and (J.flag(m, "hasFile") orelse true)) continue;
+                const id = try self.createInternal(a, ref, policy, true);
+                const db = try self.pool.acquire(self.io);
+                defer self.pool.release(self.io, db);
+                try db.exec("INSERT INTO intake_seen(app,media_id,hash,job_id) VALUES(?1,?2,?3,?4) ON CONFLICT DO NOTHING", .{ @tagName(app), mid, ref.original_hash.?, id });
+            }
+        }
+    }
     fn vpn(self: *Runtime, a: A) !void {
         const connection = self.config.vpn_health orelse return error.ExecutionNotAllowed;
         const result = try P.get(a, connection, "/health");
         if (!(J.flag(result, "healthy") orelse false)) return error.VpnNotHealthy;
     }
     fn coordinator(self: *Runtime, a: A, id: i64, state: *State, release: bool) !void {
+        if (self.config.execution.standalone) {
+            const db = try self.pool.acquire(self.io);
+            defer self.pool.release(self.io, db);
+            if (release) {
+                try db.exec("DELETE FROM live_ownership WHERE app=?1 AND media_id=?2 AND job_id=?3", .{ @tagName(state.target.app), state.target.media_id, id });
+                state.token = null;
+            } else {
+                try db.exec("INSERT INTO live_ownership(app,media_id,job_id) VALUES(?1,?2,?3) ON CONFLICT(app,media_id) DO UPDATE SET job_id=excluded.job_id WHERE job_id=excluded.job_id", .{ @tagName(state.target.app), state.target.media_id, id });
+                if (db.changes() == 0) return error.OwnershipConflict;
+                state.token = try std.fmt.allocPrint(a, "local:{d}", .{id});
+            }
+            return;
+        }
         const conn = self.config.coordinator orelse return error.ExecutionNotAllowed;
         const body = try std.json.Stringify.valueAlloc(a, .{ .app = @tagName(state.target.app), .media_id = state.target.media_id, .job_id = id, .token = state.token }, .{});
         const result = try J.parse(a, try T.mutate(a, conn, if (release) .ownership_release else .ownership_claim, body));
@@ -256,7 +353,7 @@ pub const Runtime = struct {
         return true;
     }
     fn changedFiles(before: []const P.FileState, after: []const P.FileState) bool {
-        if (before.len == 0 or before.len != after.len or !allFiles(after)) return false;
+        if (before.len == 0 or !allFiles(after)) return false;
         for (before) |old| {
             var changed = false;
             for (after) |next| if (old.episode_id == next.episode_id and old.file_id != next.file_id) {
@@ -310,7 +407,8 @@ pub const Runtime = struct {
         return null;
     }
     fn grab(self: *Runtime, a: A, id: i64, state: *State, release: P.Release, upgrade: bool) !void {
-        const key = try std.fmt.allocPrint(a, "{d}:{s}", .{ state.generation, if (upgrade) "grab_upgrade" else "grab_compact" });
+        if (release.guid.len == 0) return error.ExistingReleaseCannotBeGrabbed;
+        const key = if (release.candidate.episode_id == 0) try std.fmt.allocPrint(a, "{d}:{s}", .{ state.generation, if (upgrade) "grab_upgrade" else "grab_compact" }) else try std.fmt.allocPrint(a, "{d}:{s}:{d}", .{ state.generation, if (upgrade) "grab_upgrade" else "grab_compact", release.candidate.episode_id });
         try self.vpn(a);
         const first = try self.effect(a, id, key, "arr_grab");
         if (first) {
@@ -335,104 +433,172 @@ pub const Runtime = struct {
             if (upgrade) state.upgrade_hash = value else state.compact_hash = value;
         };
     }
+    fn choices(a: A, analysis: P.Analysis, upgrade: bool) ![]const P.Release {
+        const selections = if (upgrade) analysis.report.upgrade_selections else analysis.report.compact_selections;
+        var out: std.ArrayList(P.Release) = .empty;
+        for (selections) |selection| {
+            const value = releaseById(analysis, selection.candidate_id) orelse return error.AnalysisMissing;
+            var duplicate = false;
+            for (out.items) |previous| if (std.mem.eql(u8, previous.candidate.id, value.candidate.id)) {
+                duplicate = true;
+            };
+            if (!duplicate) try out.append(a, value);
+        }
+        if (out.items.len == 0) {
+            if (if (upgrade) analysis.report.upgrade_candidate_id else analysis.report.compact_candidate_id) |id| try out.append(a, releaseById(analysis, id) orelse return error.AnalysisMissing);
+        }
+        return out.items;
+    }
+    fn activeUpgrades(a: A, state: State) ![]const P.Release {
+        const analysis = state.analysis orelse return error.AnalysisMissing;
+        if (state.upgrade_selection_ids.len == 0) return choices(a, analysis, true);
+        var out: std.ArrayList(P.Release) = .empty;
+        for (state.upgrade_selection_ids) |id| try out.append(a, releaseById(analysis, id) orelse return error.AnalysisMissing);
+        return out.items;
+    }
+    fn usesOriginal(state: State) bool {
+        return state.target.original_hash != null and !state.adopt_original;
+    }
+    fn beginUpgrade(self: *Runtime, a: A, id: i64, state: *State, current: []const P.FileState, profile: J.Value) !void {
+        const targets = try choices(a, state.analysis orelse return error.AnalysisMissing, true);
+        var baseline: std.ArrayList(P.FileState) = .empty;
+        var ids: std.ArrayList([]const u8) = .empty;
+        for (targets) |target| {
+            var selected = false;
+            for (current) |file| {
+                if (!usesOriginal(state.*) and file.episode_id != target.candidate.episode_id) continue;
+                const result = P.compare(profile, file.quality_id, file.format_score, target.candidate.quality_id, target.candidate.format_score);
+                if (result.better == null) return error.NotAVerifiedUpgrade;
+                if (!result.better.?) continue;
+                var duplicate = false;
+                for (baseline.items) |before| if (before.episode_id == file.episode_id) {
+                    duplicate = true;
+                };
+                if (!duplicate) try baseline.append(a, file);
+                selected = true;
+            }
+            if (selected) try ids.append(a, target.candidate.id);
+        }
+        if (baseline.items.len == 0) {
+            try self.compensate(a, id, state);
+            state.stage = .completed;
+            try self.save(a, id, state, "completed", "A watchable copy is available. No higher approved release currently meets the final profile; native Arr searches remain enabled.");
+            return;
+        }
+        state.baseline = baseline.items;
+        state.upgrade_selection_ids = ids.items;
+        state.stage = .upgrading;
+        state.upgrade_sent_at_ms = std.Io.Timestamp.now(self.io, .real).toMilliseconds();
+        try self.save(a, id, state, "upgrade_planned", "Upgrade confirmed by the profile; first copy remains available.");
+        if (usesOriginal(state.*)) {
+            state.upgrade_hash = state.target.original_hash;
+            try self.restoreOriginal(a, id, state);
+        } else {
+            for (try activeUpgrades(a, state.*)) |target| try self.grab(a, id, state, target, true);
+        }
+        try self.save(a, id, state, "", "");
+    }
     fn advance(self: *Runtime, a: A, id: i64, state: *State) !void {
         if (!self.allowed(state.target)) return error.ExecutionNotAllowed;
         try self.vpn(a);
+        const analysis = state.analysis orelse return error.AnalysisMissing;
+        const profile = try self.nativeProfile(a, state.*);
+        const current = try P.files(a, self.config, state.target, profile);
+        const compact = try choices(a, analysis, false);
         if (state.stage == .claiming) {
             const queue = try P.get(a, try P.connection(self.config, state.target.app), "/api/v3/queue?page=1&pageSize=1000");
             if ((J.num(queue, "totalRecords") orelse 1001) > 1000) return error.QueueScopeUnknown;
             for (J.items(queue, "records")) |record| {
-                if (J.num(record, if (state.target.app == .radarr) "movieId" else "seriesId") == state.target.media_id) return error.ExistingDownloadNeedsAnalysis;
+                if (J.num(record, if (state.target.app == .radarr) "movieId" else "seriesId") != state.target.media_id) continue;
+                const hash = J.str(record, "downloadId") orelse return error.QueueScopeUnknown;
+                if (state.target.original_hash == null or !std.ascii.eqlIgnoreCase(hash, state.target.original_hash.?)) return error.ExistingDownloadNeedsAnalysis;
+            }
+            if (state.target.original_hash) |hash| {
+                const source = analysis.report.original orelse return error.OriginalUpgradeNeedsVerification;
+                const info = try P.get(a, self.config.qbittorrent orelse return error.ConnectionNotConfigured, try std.fmt.allocPrint(a, "/api/v2/torrents/info?hashes={s}", .{hash}));
+                if (J.array(info).len != 1) return error.OriginalTorrentNotFound;
+                const torrent = J.array(info)[0];
+                if (!std.ascii.eqlIgnoreCase(J.str(torrent, "hash") orelse "", hash)) return error.OriginalTorrentNotFound;
+                const status = J.str(torrent, "state") orelse return error.UnknownTorrentState;
+                if ((std.mem.startsWith(u8, status, "stopped") or std.mem.startsWith(u8, status, "paused")) and !state.original_stopped) return error.RespectManualPause;
+                const raw = J.field(torrent, "progress");
+                const progress: f64 = if (raw == .float) raw.float else if (raw == .integer) @floatFromInt(raw.integer) else return error.UnknownTorrentState;
+                if (!std.math.isFinite(progress) or progress < 0 or progress > 1 or std.mem.eql(u8, status, "error") or std.mem.eql(u8, status, "missingFiles")) return error.UnknownTorrentState;
+                state.adopt_original = source.compact;
+                if (!allFiles(current) and !source.compact) {
+                    if (!std.math.isFinite(progress) or progress >= 0.1) return error.RespectExistingProgress;
+                    if (compact.len != (if (state.target.app == .radarr) @as(usize, 1) else state.target.episode_ids.len)) return error.NoCompactCandidate;
+                    for (compact) |candidate| if (P.compare(profile, candidate.candidate.quality_id, candidate.candidate.format_score, source.quality_id, source.format_score).better != true) return error.NotAVerifiedUpgrade;
+                }
             }
         }
         try self.ensureOwner(a, id, state);
-        const profile = try self.nativeProfile(a, state.*);
-        const current = try P.files(a, self.config, state.target, profile);
-        const analysis = state.analysis orelse return error.AnalysisMissing;
-        if (state.stage == .claiming and allFiles(current)) {
-            state.baseline = current;
-            const target = releaseById(analysis, analysis.report.upgrade_candidate_id orelse return error.NoUpgradeCandidate) orelse return error.NoUpgradeCandidate;
-            for (current) |file| if (P.compare(profile, file.quality_id, file.format_score, target.candidate.quality_id, target.candidate.format_score).better != true) {
-                return error.NotAVerifiedUpgrade;
-            };
-            state.stage = .upgrading;
-            state.upgrade_sent_at_ms = std.Io.Timestamp.now(self.io, .real).toMilliseconds();
-            try self.save(a, id, state, "upgrade_planned", "A watchable copy is already available; request only the verified upgrade.");
-            try self.grab(a, id, state, target, true);
-            try self.save(a, id, state, "", "");
-            return;
-        }
+        if (state.stage == .claiming and allFiles(current)) return self.beginUpgrade(a, id, state, current, profile);
         if (state.stage == .claiming) {
-            const selected = releaseById(analysis, analysis.report.compact_candidate_id orelse return error.NoCompactCandidate) orelse return error.NoCompactCandidate;
-            if (!selected.candidate.compact or !selected.candidate.native_approved) return error.UnsafeCandidate;
-            if (state.target.original_hash) |hash| {
-                const qb = self.config.qbittorrent orelse return error.ConnectionNotConfigured;
-                const list = try P.get(a, qb, try std.fmt.allocPrint(a, "/api/v2/torrents/info?hashes={s}", .{hash}));
-                if (J.array(list).len != 1) return error.OriginalTorrentNotFound;
-                const torrent = J.array(list)[0];
-                const status = J.str(torrent, "state") orelse return error.UnknownTorrentState;
-                if (std.mem.startsWith(u8, status, "stopped") or std.mem.startsWith(u8, status, "paused")) return error.RespectManualPause;
-                const progress = J.field(torrent, "progress");
-                const p: f64 = if (progress == .float) progress.float else if (progress == .integer) @floatFromInt(progress.integer) else 1;
-                if (p >= 0.1) return error.RespectExistingProgress;
-                state.original_stopped = true;
-                try self.save(a, id, state, "original_stop_planned", "Record recovery actions before pausing the original.");
-                try self.controlTorrent(a, id, state.*, hash, false);
+            if (state.adopt_original) {
+                state.compact_hash = state.target.original_hash;
+            } else {
+                const wanted: usize = if (state.target.app == .radarr) 1 else state.target.episode_ids.len;
+                if (compact.len != wanted) return error.NoCompactCandidate;
+                for (compact) |selected| if (!selected.candidate.compact or !selected.candidate.native_approved or selected.guid.len == 0) return error.UnsafeCandidate;
+                if (state.target.original_hash) |hash| {
+                    state.original_stopped = true;
+                    try self.save(a, id, state, "original_stop_planned", "Record recovery actions before pausing the original.");
+                    try self.controlTorrent(a, id, state.*, hash, false);
+                }
             }
             state.stage = .compact;
             state.compact_sent_at_ms = std.Io.Timestamp.now(self.io, .real).toMilliseconds();
-            try self.save(a, id, state, "awaiting_compact", "First copy is downloading; library preserved.");
-            try self.grab(a, id, state, selected, false);
-            try self.save(a, id, state, "", " ");
-            return;
-        }
-        if (state.stage == .compact) {
-            const selected = releaseById(analysis, analysis.report.compact_candidate_id orelse return error.NoCompactCandidate) orelse return error.NoCompactCandidate;
-            if (!allFiles(current)) {
-                if (std.Io.Timestamp.now(self.io, .real).toMilliseconds() - state.compact_sent_at_ms > 6 * 3600 * 1000) return error.CompactImportTimeout;
+            try self.save(a, id, state, "awaiting_compact", if (state.adopt_original) "The existing compact download was adopted without another grab." else "First copy is downloading; library preserved.");
+            if (!state.adopt_original) for (compact) |selected| {
                 try self.grab(a, id, state, selected, false);
-                try self.save(a, id, state, "", "");
-                return;
-            }
-            state.baseline = current;
-            try self.save(a, id, state, "compact_imported", "Imported files confirmed for all items; recording file identities before upgrading.");
-            if (state.target.original_hash != null) {
-                return error.OriginalUpgradeNeedsVerification;
-            }
-            const target = releaseById(analysis, analysis.report.upgrade_candidate_id orelse return error.NoUpgradeCandidate) orelse return error.NoUpgradeCandidate;
-            for (current) |file| {
-                const comparison = P.compare(profile, file.quality_id, file.format_score, target.candidate.quality_id, target.candidate.format_score);
-                if (comparison.better != true) return error.NotAVerifiedUpgrade;
-            }
-            state.stage = .upgrading;
-            state.upgrade_sent_at_ms = std.Io.Timestamp.now(self.io, .real).toMilliseconds();
-            try self.save(a, id, state, "upgrade_planned", "Upgrade confirmed by the profile; first copy remains available.");
-            try self.grab(a, id, state, target, true);
+            };
             try self.save(a, id, state, "", "");
             return;
         }
+        if (state.stage == .compact) {
+            if (!allFiles(current)) {
+                if (std.Io.Timestamp.now(self.io, .real).toMilliseconds() - state.compact_sent_at_ms > 6 * 3600 * 1000) return error.CompactImportTimeout;
+                if (!state.adopt_original) for (compact) |selected| {
+                    try self.grab(a, id, state, selected, false);
+                };
+                try self.save(a, id, state, "", "");
+                return;
+            }
+            try self.save(a, id, state, "compact_imported", "Imported files confirmed for all items; recording file identities before upgrading.");
+            return self.beginUpgrade(a, id, state, current, profile);
+        }
         if (state.stage == .upgrading) {
             if (changedFiles(state.baseline, current)) {
-                const target = releaseById(analysis, analysis.report.upgrade_candidate_id orelse return error.NoUpgradeCandidate) orelse return error.NoUpgradeCandidate;
-                for (current) |file| {
+                const targets = try activeUpgrades(a, state.*);
+                for (state.baseline) |before| {
+                    var after: ?P.FileState = null;
+                    for (current) |file| if (file.episode_id == before.episode_id) {
+                        after = file;
+                        break;
+                    };
+                    const file = after orelse return error.UnknownFileIdentity;
+                    var expected_target: ?P.Candidate = null;
+                    for (targets) |target| if (usesOriginal(state.*) or target.candidate.episode_id == file.episode_id) {
+                        expected_target = target.candidate;
+                        break;
+                    };
+                    const target = expected_target orelse return error.AnalysisMissing;
                     const rank = P.qualityRank(profile, file.quality_id orelse return error.UnknownFileIdentity) orelse return error.InvalidQualityProfile;
-                    const expected = P.qualityRank(profile, target.candidate.quality_id) orelse return error.InvalidQualityProfile;
-                    if (rank.rank < expected.rank or (rank.rank == expected.rank and (file.format_score orelse return error.UnknownFileIdentity) < target.candidate.format_score)) return error.ImportedFileDoesNotMeetTarget;
-                    for (state.baseline) |baseline| {
-                        if (baseline.episode_id == file.episode_id and P.compare(profile, baseline.quality_id, baseline.format_score, file.quality_id.?, file.format_score orelse return error.UnknownFileIdentity).better != true) return error.NotAVerifiedUpgrade;
-                    }
+                    const expected = P.qualityRank(profile, target.quality_id) orelse return error.InvalidQualityProfile;
+                    if (rank.rank < expected.rank or (rank.rank == expected.rank and (file.format_score orelse return error.UnknownFileIdentity) < target.format_score)) return error.ImportedFileDoesNotMeetTarget;
+                    if (P.compare(profile, before.quality_id, before.format_score, file.quality_id.?, file.format_score orelse return error.UnknownFileIdentity).better != true) return error.NotAVerifiedUpgrade;
                 }
                 try self.compensate(a, id, state);
                 state.stage = .completed;
                 try self.save(a, id, state, "completed", "Arr imported the upgrade and replaced the library copy. Prontarr did not directly delete any files.");
                 return;
             }
-            if (state.target.original_hash != null) {
+            if (usesOriginal(state.*)) {
                 try self.restoreOriginal(a, id, state);
-                return;
+            } else {
+                for (try activeUpgrades(a, state.*)) |target| try self.grab(a, id, state, target, true);
             }
-            const target = releaseById(analysis, analysis.report.upgrade_candidate_id orelse return error.NoUpgradeCandidate) orelse return error.NoUpgradeCandidate;
-            try self.grab(a, id, state, target, true);
             try self.save(a, id, state, "", "");
         }
     }
@@ -445,7 +611,9 @@ pub fn migrate(conn: DB.Conn) !void {
         \\CREATE TABLE IF NOT EXISTS live_jobs(id INTEGER PRIMARY KEY,request_key TEXT UNIQUE NOT NULL,state TEXT NOT NULL,cancel_requested INTEGER NOT NULL DEFAULT 0);
         \\CREATE TABLE IF NOT EXISTS live_events(id INTEGER PRIMARY KEY,job_id INTEGER NOT NULL,kind TEXT NOT NULL,detail TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT(strftime('%Y-%m-%dT%H:%M:%fZ','now')));
         \\CREATE TABLE IF NOT EXISTS live_effects(id INTEGER PRIMARY KEY,job_id INTEGER NOT NULL,effect_key TEXT NOT NULL,kind TEXT NOT NULL,status TEXT NOT NULL,UNIQUE(job_id,effect_key));
-        \\PRAGMA user_version=2;
+        \\CREATE TABLE IF NOT EXISTS live_ownership(app TEXT NOT NULL,media_id INTEGER NOT NULL,job_id INTEGER NOT NULL,PRIMARY KEY(app,media_id));
+        \\CREATE TABLE IF NOT EXISTS intake_seen(app TEXT NOT NULL,media_id INTEGER NOT NULL,hash TEXT NOT NULL,job_id INTEGER,PRIMARY KEY(app,media_id,hash));
+        \\PRAGMA user_version=3;
     );
 }
 pub fn lockProcess(a: A, path: []const u8) !c_int {

@@ -7,6 +7,7 @@ build: frontend
 run:
 	./zig-out/bin/prontarr
 test:
+	npm run lint --prefix frontend
 	npm run build --prefix frontend
 	zig build
 	npm test --prefix frontend

@@ -1,3 +1,14 @@
+# Changelog
+
+## 0.4.0-alpha.2 — Standalone execution
+
+- Native monitored queue intake with opt-in automatic execution and SQLite ownership.
+- Verified existing compact adoption; larger original pause/resume with preserved progress.
+- Per-episode compact acquisition for verified selected pack files; import checks cover all missing episodes.
+- Explicit HTTPS proxy Host/Origin configuration, private data and restart-safe effect journal retained.
+- Security pipeline: ESLint, npm audit, Bandit, Semgrep, OSV, Gitleaks, TruffleHog, Syft, Grype, Trivy and SonarQube Cloud.
+- Improved setup documentation and confirmed project funding link.
+
 ## Internationalization and publication setup
 
 - English UI and backend messages by default, with bundled en/pt-BR catalogs and a persistent language picker.
@@ -20,7 +31,6 @@
 - Plans UI with source comparison, events, cancellation and reanalysis.
 - Execution defaults off. Resuming an existing original torrent remains blocked pending full verification; multi-episode compact acquisition remains unsupported.
 
-# Changelog
 
 ## 0.3.0 — 2026-11-18
 

@@ -9,7 +9,7 @@ Research date: **2026-11-18**. Versions were checked against upstream repositori
 | zqlite.zig | commit `865223b734a5113f731ab1eb1d7d81c8ac252913` | Small SQLite wrapper, bundled SQLite 3.53.0; compiled and exercised on 0.17.1 despite README mentioning 0.16 |
 | libcurl | 8.23.0 (system, tested) | Bounded upstream GETs, connect/transfer deadlines and TLS verification |
 | React / React DOM | 19.3.1 | Component UI; no SSR needed |
-| TypeScript | 7.0.2 | Strict frontend type checking |
+| TypeScript | 6.0.3 | Strict frontend type checking; supported by typescript-eslint 8.73 |
 | Vite | 8.3.8 | Static frontend build, embedded into Zig executable |
 | Vite React plugin | 6.3.0 | Official React integration |
 | TanStack Query | 5.108.0 | Request status, mutations, cache invalidation |

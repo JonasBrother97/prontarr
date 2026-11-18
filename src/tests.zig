@@ -88,3 +88,26 @@ test "series require explicit scope and valid torrent identity" {
     try std.testing.expectError(error.InvalidTorrentHash, planner.validate(.{ .app = .radarr, .media_id = 1, .original_hash = "bad" }));
     try planner.validate(.{ .app = .sonarr, .media_id = 1, .episode_ids = &.{2} });
 }
+
+test "public proxy URL allows only an explicit HTTPS origin" {
+    try std.testing.expectEqualStrings("app.example.test", try transport.publicAuthority("https://app.example.test"));
+    try std.testing.expectEqualStrings("app.example.test:8443", try transport.publicAuthority("https://app.example.test:8443"));
+    for ([_][]const u8{ "http://app.example.test", "https://app.example.test/", "https://app.example.test/path", "https://app.example.test?query=1", "https://app.example.test#fragment" }) |url| {
+        if (transport.publicAuthority(url)) |_| return error.ExpectedInvalidOrigin else |_| {}
+    }
+}
+
+test "queue-only rejection exemption never accepts unrelated rejections" {
+    const a = std.testing.allocator;
+    const samples = [_]struct { json: []const u8, allowed: bool }{
+        .{ .json = "{\"rejections\":[\"Quality for release in queue is higher\"]}", .allowed = true },
+        .{ .json = "{\"rejections\":[\"Quality for release in queue is higher\",\"Release is blocklisted\"]}", .allowed = false },
+        .{ .json = "{\"rejections\":[]}", .allowed = false },
+        .{ .json = "{\"rejections\":[\"Existing release in queue\"],\"temporarilyRejected\":true}", .allowed = false },
+    };
+    for (samples) |sample| {
+        const parsed = try std.json.parseFromSlice(std.json.Value, a, sample.json, .{});
+        defer parsed.deinit();
+        try std.testing.expectEqual(sample.allowed, planner.queueOnlyRejections(parsed.value));
+    }
+}

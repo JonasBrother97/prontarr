@@ -1,30 +1,41 @@
-# Controlled execution
+# Execution and recovery
 
-Execution is disabled by default. Analysis is separate from execution: creating or reanalyzing a plan performs native GET searches, never grabs a release.
+Execution is disabled by default. Manual analysis performs native GET searches without grabbing a release. Automatic queue intake explicitly opts into analysis followed by guarded execution.
 
-## Configuration
+## Standalone configuration
 
-Add these fields to the private connections file (mode 0600), alongside the existing Arr/qBittorrent adapters:
+Add these fields to a private connections file (mode 0600), alongside the Arr and qBittorrent adapters:
 
 ```json
 {
-  "coordinator": {"url": "http://127.0.0.1:18106", "basic_auth": "username:secret"},
-  "vpn_health": {"url": "http://127.0.0.1:18105"},
-  "execution": {"enabled": true, "allowed_movie_ids": [48], "allowed_series_ids": []}
+  "vpn_health": {"url": "http://vpn-guard.example.test:18105"},
+  "execution": {
+    "enabled": true,
+    "standalone": true,
+    "automatic": true,
+    "allowed_movie_ids": [48],
+    "allowed_series_ids": [9]
+  }
 }
 ```
 
-IDs above are examples. Use your own allowlist. Secrets must never be committed or returned to the browser. The VPN endpoint must return `{"healthy": true}`. The coordinator must durably implement authenticated `/ownership/claim` and `/ownership/release`, refusing scopes already owned by the legacy controller or a different Prontarr job. It must use the same lock as legacy event/reconciliation processing. There is deliberately no expiring lease: a crash cannot let a second controller silently take over.
+IDs are examples. Start with a small allowlist. Set `allow_all_movies` and/or `allow_all_series` to true only when you intend to cover all monitored media in the corresponding Arr queue. Automatic mode requires standalone execution and checks queues every 15 seconds. A healthy VPN endpoint returning `{"healthy": true}` is mandatory before intake and upstream actions.
 
-`integrations/prontarr_ownership.py` supplies the durable gate; `patch_legacy.py` targets the known legacy Python controller, checks source layout and refuses an already patched source. It is not a universal installer. Preserve the previous controller before applying a patch. Restore it only after cancelling/releasing Prontarr plans and confirming that no scope remains externally owned.
+Standalone mode stores exclusive ownership in the same SQLite database as jobs and effects; no external ownership server is needed. Never operate two databases/controllers against the same media scope. Stop the previous controller and migrate a consistent database before switching ownership modes.
+
+For reverse proxy deployment set `PRONTARR_BIND=0.0.0.0` and `PRONTARR_PUBLIC_URL=https://app.example.test`. Only the exact configured HTTPS host and origin are added to the default loopback allowlist. Authentication must be supplied by a proxy; restrict direct access to port 5882. This variable does not implement authentication.
+
+### Legacy coexistence
+
+With `standalone` left false, the earlier external coordinator remains supported via a private `coordinator` connection implementing authenticated `/ownership/claim` and `/ownership/release`. The helpers in `integrations/` target the original Python pilot and are migration tools, not required services for standalone deployment.
 
 ## Lifecycle and recovery
 
 1. Analyze native profile, language, approved releases, current file identities and optional torrent manifest.
-2. Review selected compact and upgrade sources; starting requires a fresh analysis and an explicitly allowed title.
-3. Claim exclusive ownership, verify VPN health, persist the intended effect, then request the compact source through Arr.
+2. Review selected compact and upgrade sources, or let automatic mode start an allowed monitored queue item with a fresh analysis. Paused torrents, finished torrents and movies already in the library are skipped by intake.
+3. Claim ownership and verify VPN health. Adopt a verified compact original without grabbing it again. Otherwise record recovery state, pause a verified larger original below 10% progress and request compact releases through Arr. Existing progress is preserved.
 4. Wait for native file identities proving every selected item is available.
-5. Compare the selected upgrade with the newly imported files using native quality groups, formats, minimum improvement and cutoffs. Keep the first copy available while the upgrade downloads.
+5. Resume the original larger torrent after compact imports, or compare the selected new upgrade with the newly imported files using native quality groups, formats, minimum improvement and cutoffs. Keep the first copy available while the upgrade downloads.
 6. Confirm replacement file identities and target quality/formats, then release ownership. Arr performs the library replacement. Prontarr never deletes a library file or torrent.
 
 Effects marked `sending`, `sent` or `uncertain` are never blindly submitted again after restart. An ambiguous network result is reconciled against the native queue or import. Cancellation releases ownership, preserves downloads and restores only an original torrent previously paused by this controller. A failed job can retain ownership until explicitly cancelled; restarting the process does not transfer control to the old script.
@@ -33,13 +44,14 @@ Only one process may operate a database, enforced by an OS file lock. Database, 
 
 ## Current limitations
 
-- Real execution is a narrow pilot. General automatic intake of all requests is not enabled.
-- Movies and individually selected series episodes can be planned. Manifest inspection supports packs, but searching/grabbing multiple compact episode releases within one plan is not implemented yet.
-- Plans referencing an existing original torrent cannot start until its exact quality/formats and resume path are fully verified. No existing torrent is paused by these plans.
-- Seed counts are a heuristic, not measured throughput. There is no automatic compact-source replacement yet; the first import has a six-hour deadline and then requires review.
-- Unknown current custom-format scores block same-quality upgrades. Proper/repack equivalence is conservative.
-- Native RSS, native/manual searches, Cleanuparr and other tools retain their own behavior; the ownership gate coordinates the legacy fast-first script, not every third-party actor.
-- Native imports and filesystem availability determine completion. Successful mocked lifecycle tests are not proof that a real torrent has finished.
+- This remains an experimental alpha. Unknown scope, quality, file identities, formats or upstream responses require review rather than guessed actions.
+- Movies and selected episodes are supported. Pack manifests must identify selected video files exactly. Compact acquisition uses one single-episode release per missing episode, up to 64 episodes; it never assumes that all queue rows belong to actual files.
+- Already imported episodes are excluded from compact acquisition. All selected missing episodes must import before an original pack resumes.
+- A larger original at or above 10% progress is not interrupted. Manually paused originals are respected. Existing compact releases can be adopted even beyond that threshold.
+- Only native queue-conflict rejection messages may be superseded for the first copy of a verified larger original. Language, blocklist, quality, custom-format and other native rejections remain enforced.
+- Seed counts are a heuristic. No automatic compact-source replacement is implemented; a six-hour import deadline requires review. Failed automatic analyses are persisted for review rather than endlessly recreated.
+- Native RSS/manual searches and Cleanuparr operate independently. Prontarr never deletes library files or torrent data, and does not lock every third-party actor.
+- Native imports determine completion. Successful mocked contracts do not prove that a real download has finished.
 
 ## API
 
@@ -53,6 +65,6 @@ In **Settings → Download profiles**, choose an initial and final profile separ
 
 The initial profile filters allowed qualities and custom-format minimums in addition to compact size, resolution and seed limits. The final profile determines quality ranking, format scores and upgrade cutoffs. Scores are recalculated from matched custom-format IDs using the selected profile's weights; an alternate profile cannot use a score calculated for a different profile when format metadata is missing.
 
-Native approval, original audio and the existing rejection/blocklist protections remain mandatory. Selecting a different profile does not edit the title's native `qualityProfileId` or bypass native rejections. A stricter native title profile may therefore prevent a source that the initial profile would otherwise allow.
+Native approval, original audio and the existing rejection/blocklist protections remain mandatory. Selecting a different profile does not edit the title's native `qualityProfileId`. The sole rejection exception is the verified original queue conflict described above. A stricter native title profile may therefore prevent a source that the initial profile would otherwise allow.
 
 Jobs retain their policy snapshot. Saving defaults affects new jobs; **Reanalyze with current defaults** explicitly adopts current settings for a stopped/ready plan. Running plans must be cancelled before reanalysis. Existing simulations and jobs without selection fields remain compatible and use the title's profile.
