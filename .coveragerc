@@ -1,0 +1,6 @@
+[run]
+relative_files = True
+source = scripts,integrations
+
+[xml]
+output = coverage/python.xml

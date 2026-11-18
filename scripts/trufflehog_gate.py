@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """Evaluate TruffleHog JSON without logging credential values."""
 import json
-from pathlib import Path
+import hashlib
 import sys
 
 
-def evaluate(report: Path, status: int) -> int:
+def evaluate(report: str, status: int) -> int:
     if status not in (0, 183):
         print(f'TruffleHog failed to run (exit {status}); raw logs withheld.')
         return 1
     findings = 0
     ignored = 0
-    for line in report.read_text().splitlines():
+    for line in report.splitlines():
         if not line.strip():
             continue
         entry = json.loads(line)
@@ -21,7 +21,7 @@ def evaluate(report: Path, status: int) -> int:
         # Do not exempt whole files, detectors or other credentials.
         if (entry.get('DetectorName') == 'URI'
                 and source.get('file') in {'src/tests.zig', 'scripts/trufflehog_gate.py', 'docs/security-ci.md'}
-                and entry.get('Raw') == ('http://' + 'user:secret' + '@example.test')):
+                and hashlib.sha256(entry.get('Raw', '').encode()).hexdigest() == '934d2d3da4ee669bca0223cc5137596994f37d420d71d62a25b1fd2f91965840'):
             ignored += 1
             continue
         findings += 1
@@ -33,4 +33,4 @@ def evaluate(report: Path, status: int) -> int:
 
 
 if __name__ == '__main__':
-    sys.exit(evaluate(Path(sys.argv[1]), int(sys.argv[2])))
+    sys.exit(evaluate(sys.stdin.read(), int(sys.argv[1])))

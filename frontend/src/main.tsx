@@ -671,7 +671,7 @@ function PolicyForm({ initial }: { initial: Policy }) {
         </div>
         <ErrorNotice error={save.error} />
         <div className="form-actions">
-          <button className="primary" disabled={save.isPending}>
+          <button type="submit" className="primary" disabled={save.isPending}>
             {t("Save policy")}
           </button>
           {save.isSuccess && (
@@ -1072,7 +1072,7 @@ function SimulatorForm({
             ))}
           </section>
           <ErrorNotice error={simulate.error} />
-          <button className="primary" disabled={simulate.isPending}>
+          <button type="submit" className="primary" disabled={simulate.isPending}>
             <FlaskConical size={17} />
             {simulate.isPending ? t("Evaluating…") : t("Simulate decision")}
           </button>
