@@ -63,33 +63,39 @@ For frontend development, run `npm run dev --prefix frontend` while the backend 
 ## Verify
 
 ```sh
-npm test --prefix frontend
-zig build test
-python3 tests/api_smoke.py
-python3 tests/observe_contract.py
+make test
 ```
 
 The integration test starts its own executable on port 5882 with a temporary database, checks validation/security boundaries, saves data, restarts the process and checks persistence. Stop a manual Prontarr instance first. The contract suite uses only isolated local mock upstreams, including a temporary self-signed TLS endpoint. Neither suite connects to your homelab.
 
 ## API
 
-POST and PUT endpoints require `Content-Type: application/json`. Settings and plans only write local data; observation only performs upstream GET requests.
+POST and PUT endpoints require `Content-Type: application/json`. Settings and simulation plans write local data; observation only performs upstream GET requests. Execution plans can request guarded upstream actions only when execution is explicitly enabled.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| GET | `/api/health` | Version, observation capability and disabled live-action status |
-| GET / PUT | `/api/policy` | Read or save simulation defaults |
+| GET | `/api/health` | Version and configured execution/observation capabilities |
+| GET / PUT | `/api/policy` | Read or save profile choices and planning defaults |
 | POST | `/api/simulate` | Return a decision, without saving or executing it |
 | GET / POST | `/api/plans` | Latest 100 saved simulations / save a simulation |
 | GET | `/api/plans/:id` | Retrieve original inputs and decision for simulation replay |
 | GET | `/api/connections` | Redacted configured flags; no upstream requests |
 | POST | `/api/observe` | Real read-only queue/torrent observation |
+| GET | `/api/profiles` | Native quality profiles, with sanitized criteria |
+| GET | `/api/library` | Native movies and series for plan selection |
+| GET / POST | `/api/jobs` | List persisted execution plans / create analysis |
+| GET | `/api/jobs/:id` | Selected releases, plan state and events |
+| POST | `/api/jobs/:id/start` | Start an explicitly permitted, fresh plan |
+| POST | `/api/jobs/:id/cancel` | Cancel and release control, preserving downloads |
+| POST | `/api/jobs/:id/analyze` | Reanalyze using current planning defaults |
 
 See [changelog](docs/CHANGELOG.md), [example request](docs/example-input.json), [architecture](docs/architecture.md), [dependency research](docs/dependencies.md) and [roadmap](docs/roadmap.md).
 
 ## Status and distribution
 
-Local development repository; no upstream remote, publication or deployment is configured. Working name **Prontarr** is provisional. Public release and licensing are still to be decided. Do not expose this prototype through a reverse proxy or tunnel: authentication has not been implemented, and the server intentionally accepts only loopback hosts.
+Public source: [JonasBrother97/prontarr](https://github.com/JonasBrother97/prontarr), under MIT. Container releases are published to [jonasbrother97/prontarr](https://hub.docker.com/r/jonasbrother97/prontarr).
+
+This is an **alpha** with a controlled execution pilot. General automatic intake and multi-episode compact acquisition are not enabled. See [execution limits](docs/execution.md). The server has no built-in authentication; native development and the supplied Compose port mapping default to loopback.
 
 ## Containers and CI
 

@@ -21,8 +21,10 @@ Connections are optional. For real integrations, mount a private configuration f
 Before publishing, configure:
 
 - Repository variable `DOCKERHUB_USERNAME` with the destination Docker Hub user.
-- GitHub environment `dockerhub` with secret `DOCKERHUB_TOKEN`, a Docker Hub access token with write permission for the intended namespace.
+- Actions secret `DOCKERHUB_TOKEN`, a Docker Hub access token with write permission for the intended namespace. It can be a repository secret or a secret in the `dockerhub` environment.
 
 Create/push a semantic version tag such as `v0.4.0`. Only successful tests on version-tag pushes from `JonasBrother97` can publish. Main branch pushes and pull requests build/test but never publish. Release images are tagged with the full version and major/minor version; stable versions also get `latest`. The workflow requests provenance and SBOM attestations. Missing publishing credentials fail with a clear configuration error without exposing secrets.
 
 The CI Docker test build passed on GitHub. CI also builds the final runtime image and checks its health endpoint, non-root UID and disabled-by-default execution before release. Local Docker builds need a running Docker daemon.
+
+The first published version is `0.4.0-alpha.1`; use `docker pull jonasbrother97/prontarr:0.4.0-alpha.1`. Pre-release tags do not update `latest`.

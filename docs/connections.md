@@ -1,6 +1,6 @@
 # Read-only service connections
 
-Prontarr 0.3 can observe Radarr, Sonarr and qBittorrent. It does not own or execute any live download action. No data is sent to indexers, and no native searches are triggered.
+The observation adapter reads Radarr, Sonarr and qBittorrent. Observation does not perform native release searches or change downloads. Separate release analysis and controlled execution are described in [execution setup](execution.md).
 
 ## Configure
 
@@ -34,7 +34,7 @@ Open **Activity → Download queue**, then **Query services**. Observation refre
 
 - `GET /api/connections`: sanitized configuration metadata, no network calls.
 - `POST /api/observe` with `{}`: read-only upstream snapshot, normalized queue/torrents and advisory explanations.
-- `GET /api/health`: mode `read_only`, capability flag `observation_available`, live actions disabled.
+- `GET /api/health`: mode `read_only` by default, or `controlled` when explicitly configured; capability flags reflect the current configuration.
 
 Returned observations are not persisted in SQLite. They remain in the browser's in-memory query cache until the page is reloaded (or the inactive query is collected after 30 minutes). Local simulation plans continue to be persisted separately. Sidebar preferences use localStorage; the selected view, title/status filters and sort order use sessionStorage. Storage failures fall back to defaults. No service credentials or full queue snapshots are stored there.
 
