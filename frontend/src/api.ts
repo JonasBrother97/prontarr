@@ -1,3 +1,4 @@
+import { t, locale } from "./i18n.ts";
 export class ApiError extends Error {
   readonly kind: "network" | "timeout" | "http" | "invalid_response";
   readonly status?: number;
@@ -35,11 +36,11 @@ export async function api<T>(
       (error.name === "TimeoutError" || error.name === "AbortError")
     )
       throw new ApiError(
-        "A consulta demorou demais. Tente novamente.",
+        t("The request timed out. Please try again."),
         "timeout",
       );
     throw new ApiError(
-      "Não foi possível conectar ao Prontarr. Verifique se o servidor está rodando.",
+      t("Could not connect to Prontarr. Check that the server is running."),
       "network",
     );
   }
@@ -49,8 +50,10 @@ export async function api<T>(
   } catch {
     throw new ApiError(
       response.ok
-        ? "O servidor retornou uma resposta inválida."
-        : `O servidor respondeu com erro HTTP ${response.status}. Tente novamente.`,
+        ? t("The server returned an invalid response.")
+        : t("The server returned HTTP {{status}}. Please try again.", {
+            status: response.status,
+          }),
       response.ok ? "invalid_response" : "http",
       response.status,
     );
@@ -61,8 +64,10 @@ export async function api<T>(
       data !== null &&
       "error_message" in data &&
       typeof data.error_message === "string"
-        ? data.error_message.slice(0, 500)
-        : `Não foi possível concluir a operação (HTTP ${response.status}).`;
+        ? t(data.error_message.slice(0, 500))
+        : t("Could not complete the operation (HTTP {{status}}).", {
+            status: response.status,
+          });
     throw new ApiError(message, "http", response.status);
   }
   return data as T;

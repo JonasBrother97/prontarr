@@ -79,17 +79,17 @@ fn score(c: Candidate) f64 {
 pub fn decide(input: Input) Decision {
     const s = input.snapshot;
     const all_available = s.imported_episodes == s.expected_episodes;
-    if (s.stage == .complete) return .{ .action = .complete, .next_stage = .complete, .reason = "Plano concluído; nenhuma ação adicional." };
+    if (s.stage == .complete) return .{ .action = .complete, .next_stage = .complete, .reason = "Plan completed; no further action." };
     if (s.stage == .upgrading) {
         if (all_available and s.upgrade_import_confirmed) return .{
             .action = .complete,
             .next_stage = .complete,
-            .reason = "Importação do upgrade confirmada para todo o escopo. A substituição pertence ao Arr.",
+            .reason = "Upgrade import confirmed for the full scope. Arr handles replacement.",
         };
-        return .{ .action = .keep_available, .next_stage = .upgrading, .reason = "Preservar a primeira cópia enquanto o upgrade não foi confirmado em todos os episódios." };
+        return .{ .action = .keep_available, .next_stage = .upgrading, .reason = "Keep the first copy until the upgrade is confirmed for every episode." };
     }
-    if (all_available) return .{ .action = .search_upgrade, .next_stage = .upgrading, .reason = "Primeira cópia importada para todo o escopo; o upgrade pode começar." };
-    if (s.stage != .missing) return .{ .action = .wait, .next_stage = s.stage, .reason = "Aguardar a importação de todos os episódios; download concluído sozinho não basta." };
+    if (all_available) return .{ .action = .search_upgrade, .next_stage = .upgrading, .reason = "First copy imported for the full scope; the upgrade can begin." };
+    if (s.stage != .missing) return .{ .action = .wait, .next_stage = s.stage, .reason = "Wait for all episodes to be imported; a completed download alone is not enough." };
     var best: ?Candidate = null;
     for (input.candidates) |candidate| {
         if (!eligible(candidate, input.policy)) continue;
@@ -99,9 +99,9 @@ pub fn decide(input: Input) Decision {
         .action = .download_compact,
         .next_stage = .compact_downloading,
         .candidate_id = candidate.id,
-        .reason = "Versão compacta elegível com melhor estimativa relativa de disponibilidade por tamanho. Velocidade real não é garantida.",
+        .reason = "Eligible compact release with the best estimated availability relative to size. Actual speed is not guaranteed.",
     };
-    return .{ .action = .wait, .next_stage = .missing, .reason = "Nenhuma versão compacta atende às restrições. Preservar qualquer download existente." };
+    return .{ .action = .wait, .next_stage = .missing, .reason = "No compact release meets the constraints. Preserve any existing download." };
 }
 
 test "never start an upgrade while a season is partly imported" {

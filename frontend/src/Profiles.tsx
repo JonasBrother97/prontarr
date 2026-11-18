@@ -1,3 +1,4 @@
+import { t, locale } from "./i18n.ts";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "./api";
 export type ProfilePair = {
@@ -35,16 +36,16 @@ export function ProfilesSettings({
   });
   return (
     <section className="profile-settings">
-      <h2>Perfis das duas etapas</h2>
+      <h2>{t("Two-stage profiles")}</h2>
       <p>
-        Escolha os perfis do Arr para filtrar a primeira cópia e definir o
-        objetivo final. Os limites compactos abaixo também se aplicam à primeira
-        cópia.
+        {t(
+          "Choose Arr profiles to filter the first copy and set the final target. The compact limits below also apply to the first copy.",
+        )}
       </p>
       <p className="muted">
-        O perfil associado ao título no Arr continua sendo uma proteção: fontes
-        rejeitadas por ele não são liberadas aqui. As escolhas não alteram o
-        perfil do título no Radarr ou Sonarr.
+        {t(
+          "The title profile in Arr remains a safeguard: rejected releases are not allowed here. These choices do not change the title profile in Radarr or Sonarr.",
+        )}
       </p>
       <button
         type="button"
@@ -53,12 +54,12 @@ export function ProfilesSettings({
         disabled={profiles.isFetching}
       >
         {profiles.isFetching
-          ? "Consultando perfis…"
-          : "Atualizar perfis do Arr"}
+          ? t("Loading profiles…")
+          : t("Refresh Arr profiles")}
       </button>
       {profiles.error && (
         <p className="error" role="alert">
-          {profiles.error.message}
+          {t(profiles.error.message)}
         </p>
       )}
       {(["radarr", "sonarr"] as const).map((app) => {
@@ -68,12 +69,13 @@ export function ProfilesSettings({
         return (
           <fieldset className="profile-service" key={app}>
             <legend>
-              {app === "radarr" ? "Filmes · Radarr" : "Séries · Sonarr"}
+              {app === "radarr" ? t("Movies · Radarr") : t("Series · Sonarr")}
             </legend>
             {service?.error_code && (
               <p className="error" role="alert">
-                Não foi possível consultar os perfis do {app}. Verifique a
-                conexão e atualize a lista.
+                {t("Could not load profiles from")}
+                {app}
+                {t(". Check the connection and refresh the list.")}
               </p>
             )}
             <div className="form-grid">
@@ -83,8 +85,8 @@ export function ProfilesSettings({
                 return (
                   <label key={field}>
                     {field === "initial_id"
-                      ? "Perfil inicial · primeira cópia"
-                      : "Perfil final · objetivo do upgrade"}
+                      ? t("Initial profile · first copy")
+                      : t("Final profile · upgrade target")}
                     <select
                       value={id ?? ""}
                       onChange={(e) =>
@@ -100,13 +102,16 @@ export function ProfilesSettings({
                     >
                       <option value="">
                         {field === "initial_id"
-                          ? "Automático · perfil do título + limites compactos"
-                          : "Automático · perfil associado ao título"}
+                          ? t("Automatic · title profile + compact limits")
+                          : t("Automatic · title profile")}
                       </option>
                       {id != null && !selected && (
                         <option value={id}>
-                          {profiles.isFetching ? "Carregando" : "Indisponível"}{" "}
-                          · perfil #{id}
+                          {profiles.isFetching
+                            ? t("Loading")
+                            : t("Unavailable")}{" "}
+                          {t("· profile #")}
+                          {id}
                         </option>
                       )}
                       {service?.items.map((p) => (
@@ -118,10 +123,11 @@ export function ProfilesSettings({
                     {selected && (
                       <small>
                         {selected.qualities.join(", ") ||
-                          "Nenhuma qualidade permitida"}
-                        . Pontuação mínima: {selected.min_format_score}.
+                          t("No allowed qualities")}
+                        {t(". Minimum score:")}
+                        {selected.min_format_score}.
                         {field === "final_id" && !selected.upgrade_allowed
-                          ? " Upgrades desativados neste perfil."
+                          ? t(" Upgrades are disabled in this profile.")
                           : ""}
                       </small>
                     )}
@@ -133,9 +139,9 @@ export function ProfilesSettings({
         );
       })}
       <p>
-        Salvar altera os padrões para novos planos. Planos existentes mantêm
-        seus critérios até você usar “Reanalisar com padrões atuais”. Um plano
-        em execução precisa ser cancelado antes de reanalisar.
+        {t(
+          "Saving changes defaults for new plans. Existing plans keep their criteria until you use “Reanalyze with current defaults”. Cancel a running plan before reanalyzing it.",
+        )}
       </p>
     </section>
   );

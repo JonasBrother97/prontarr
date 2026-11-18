@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+import { t, locale, setLanguage } from "./i18n.ts";
 import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
@@ -82,24 +84,25 @@ type Plan = {
 };
 const GiB = 1024 ** 3;
 const stageNames: Record<Stage, string> = {
-  missing: "Sem cópia",
-  compact_downloading: "Primeira cópia",
-  watchable: "Disponível",
+  missing: "No copy",
+  compact_downloading: "First copy",
+  watchable: "Available",
   upgrading: "Upgrade",
-  complete: "Concluído",
+  complete: "Completed",
 };
 const actionNames: Record<string, string> = {
-  wait: "Aguardar",
-  download_compact: "Escolher versão compacta",
-  search_upgrade: "Buscar upgrade",
-  keep_available: "Preservar versão disponível",
-  complete: "Concluir plano",
+  wait: "Wait",
+  download_compact: "Choose compact release",
+  search_upgrade: "Search for upgrade",
+  keep_available: "Keep available copy",
+  complete: "Complete plan",
 };
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
 });
 
 function App() {
+  useTranslation();
   const [page, setPage] = useState<Page>(() =>
     pageFromHash(window.location.hash),
   );
@@ -196,7 +199,7 @@ function App() {
       {mobileMenu && (
         <button
           className="sidebar-backdrop"
-          aria-label="Fechar menu"
+          aria-label={t("Close menu")}
           onClick={() => {
             setMobileMenu(false);
             menuTrigger.current?.focus();
@@ -206,7 +209,7 @@ function App() {
       <aside
         className="sidebar"
         id="sidebar"
-        aria-label="Menu lateral"
+        aria-label={t("Sidebar")}
         inert={narrow ? !mobileMenu : collapsed}
         aria-hidden={narrow ? !mobileMenu : collapsed}
       >
@@ -223,14 +226,14 @@ function App() {
           </span>
           prontarr<span className="alpha">alpha</span>
         </a>
-        <nav className="arr-navigation" aria-label="Navegação principal">
+        <nav className="arr-navigation" aria-label={t("Main navigation")}>
           <button
             className={`nav-main ${page === "dashboard" ? "active" : ""}`}
             aria-current={page === "dashboard" ? "page" : undefined}
             onClick={() => navigate("dashboard")}
           >
             <LayoutDashboard size={20} />
-            <span>Visão geral</span>
+            <span>{t("Overview")}</span>
           </button>
           <div className="nav-group">
             <button
@@ -240,7 +243,7 @@ function App() {
               onClick={() => toggleGroup("activity")}
             >
               <Activity size={20} />
-              <span>Atividade</span>
+              <span>{t("Activity")}</span>
               <ChevronDown
                 size={14}
                 className={
@@ -255,14 +258,14 @@ function App() {
                   aria-current={page === "live" ? "page" : undefined}
                   onClick={() => navigate("live")}
                 >
-                  Fila de downloads
+                  {t("Download queue")}
                 </button>
                 <button
                   className={page === "jobs" ? "active" : ""}
                   aria-current={page === "jobs" ? "page" : undefined}
                   onClick={() => navigate("jobs")}
                 >
-                  Planos de execução
+                  {t("Execution plans")}
                 </button>
               </div>
             )}
@@ -275,7 +278,7 @@ function App() {
               onClick={() => toggleGroup("tools")}
             >
               <Wrench size={20} />
-              <span>Ferramentas</span>
+              <span>{t("Tools")}</span>
               <ChevronDown
                 size={14}
                 className={
@@ -290,7 +293,7 @@ function App() {
                   aria-current={page === "simulator" ? "page" : undefined}
                   onClick={() => navigate("simulator")}
                 >
-                  Simulador
+                  {t("Simulator")}
                 </button>
               </div>
             )}
@@ -303,7 +306,7 @@ function App() {
               onClick={() => toggleGroup("settings")}
             >
               <Settings2 size={20} />
-              <span>Configurações</span>
+              <span>{t("Settings")}</span>
               <ChevronDown
                 size={14}
                 className={
@@ -318,7 +321,7 @@ function App() {
                   aria-current={page === "policy" ? "page" : undefined}
                   onClick={() => navigate("policy")}
                 >
-                  Perfis de download
+                  {t("Download profiles")}
                 </button>
               </div>
             )}
@@ -327,11 +330,11 @@ function App() {
         <div className="sidebar-foot">
           <span className={`dot ${health.isSuccess ? "green" : ""}`} />
           {health.isSuccess
-            ? "Sistema online"
+            ? t("System online")
             : health.isError
-              ? "Sistema indisponível"
-              : "Conectando…"}
-          <small>v0.4.0 · Desenvolvimento</small>
+              ? t("System unavailable")
+              : t("Connecting…")}
+          <small>{t("v0.4.0 · Development")}</small>
         </div>
       </aside>
       <main>
@@ -340,9 +343,7 @@ function App() {
             <button
               ref={menuTrigger}
               className="sidebar-toggle"
-              aria-label={
-                mobileMenu ? "Fechar menu lateral" : "Alternar menu lateral"
-              }
+              aria-label={mobileMenu ? t("Close sidebar") : t("Toggle sidebar")}
               aria-controls="sidebar"
               aria-expanded={narrow ? mobileMenu : !collapsed}
               onClick={() => {
@@ -359,30 +360,49 @@ function App() {
               <strong>
                 {
                   {
-                    dashboard: "Visão geral",
+                    dashboard: t("Overview"),
                     live: "Downloads",
-                    jobs: "Planos de execução",
-                    simulator: "Simulador",
-                    policy: "Perfis de download",
+                    jobs: t("Execution plans"),
+                    simulator: t("Simulator"),
+                    policy: t("Download profiles"),
                   }[page]
                 }
               </strong>
             </div>
           </div>
-          <span className="mode">
-            <ShieldCheck size={14} />
-            {health.data?.live_actions_enabled
-              ? "Execução controlada"
-              : "Somente análise"}
-          </span>
+          <div className="toolbar-preferences">
+            <label className="language-picker">
+              <span className="sr-only">{t("Language")}</span>
+              <select
+                aria-label={t("Language")}
+                value={locale()}
+                onChange={(e) =>
+                  void setLanguage(e.target.value as "en" | "pt-BR")
+                }
+              >
+                <option value="en">English</option>
+                <option value="pt-BR">Português</option>
+              </select>
+            </label>
+            <span className="mode">
+              <ShieldCheck size={14} />
+              {health.data?.live_actions_enabled
+                ? t("Controlled execution")
+                : t("Analysis only")}
+            </span>
+          </div>
         </header>
         <div className="content">
           <div className="notice">
             <FlaskConical size={16} />
             <span>
               {health.data?.live_actions_enabled
-                ? "Execução limitada aos títulos autorizados. A importação e substituição de arquivos ficam a cargo do Sonarr e Radarr."
-                : "Análise de fontes reais e simulação. Execução de downloads desativada."}
+                ? t(
+                    "Execution is limited to authorized titles. Sonarr and Radarr handle file imports and replacement.",
+                  )
+                : t(
+                    "Live release analysis and simulation. Download execution is disabled.",
+                  )}
             </span>
           </div>
           {page === "dashboard" && (
@@ -405,7 +425,7 @@ function App() {
           {page === "jobs" && <Jobs />}
         </div>
         <footer>
-          PRONTARR <span>Uma cópia para agora. Uma melhor para depois.</span>
+          PRONTARR <span>{t("A watchable copy now. A better one later.")}</span>
         </footer>
       </main>
     </div>
@@ -430,33 +450,27 @@ function Dashboard({
     <>
       <section className="page-heading">
         <div>
-          <span className="eyebrow">DOWNLOAD EM DUAS ETAPAS</span>
-          <h1>Visão geral</h1>
-          <p>
-            Primeiro uma versão compacta. Depois, a qualidade que você quer.
-          </p>
+          <span className="eyebrow">{t("TWO-STAGE DOWNLOADS")}</span>
+          <h1>{t("Overview")}</h1>
+          <p>{t("First a compact copy. Then the quality you want.")}</p>
         </div>
         <button className="primary" onClick={onStart}>
           <Plus size={17} />
-          Nova simulação
+          {t("New simulation")}
         </button>
       </section>
-      <section className="pipeline" aria-label="Etapas da estratégia">
+      <section className="pipeline" aria-label={t("Strategy stages")}>
         {[
-          [
-            "01",
-            "Encontrar uma cópia",
-            "Tamanho e disponibilidade em equilíbrio.",
-          ],
+          ["01", t("Find a copy"), t("Balance size and availability.")],
           [
             "02",
-            "Liberar para assistir",
-            "Confirmar a importação de todo o escopo.",
+            t("Make it watchable"),
+            t("Confirm import for the entire scope."),
           ],
           [
             "03",
-            "Evoluir a qualidade",
-            "Preservar a cópia até o upgrade chegar.",
+            t("Improve quality"),
+            t("Keep the copy until the upgrade arrives."),
           ],
         ].map(([n, title, detail], i) => (
           <React.Fragment key={n}>
@@ -474,11 +488,13 @@ function Dashboard({
       <ErrorNotice error={reopen.error} />
       <section className="section">
         <div className="section-heading">
-          <h2>Planos de simulação</h2>
-          <span className="count">{plans.data?.items.length ?? 0} salvos</span>
+          <h2>{t("Simulation plans")}</h2>
+          <span className="count">
+            {plans.data?.items.length ?? 0} {t("saved")}
+          </span>
         </div>
         {plans.isPending ? (
-          <p role="status">Carregando planos…</p>
+          <p role="status">{t("Loading plans…")}</p>
         ) : plans.isError ? (
           <ErrorNotice error={plans.error} />
         ) : plans.data.items.length === 0 ? (
@@ -486,12 +502,14 @@ function Dashboard({
             <span className="empty-icon">
               <Layers3 size={28} />
             </span>
-            <h3>O primeiro plano começa aqui</h3>
+            <h3>{t("Your first plan starts here")}</h3>
             <p>
-              Compare versões e veja por que o motor escolheu cada próxima ação.
+              {t(
+                "Compare releases and see why the engine chose the next action.",
+              )}
             </p>
             <button className="secondary" onClick={onStart}>
-              Abrir simulador
+              {t("Open simulator")}
               <ArrowRight size={16} />
             </button>
           </div>
@@ -504,22 +522,24 @@ function Dashboard({
                 </div>
                 <div>
                   <h3>{p.title}</h3>
-                  <p>{actionNames[p.decision.action]}</p>
+                  <p>{t(actionNames[p.decision.action])}</p>
                   <small>
-                    {new Date(p.created_at).toLocaleString("pt-BR")}
+                    {new Date(p.created_at).toLocaleString(locale())}
                   </small>
                 </div>
                 <span className="pill">
-                  {stageNames[p.decision.next_stage]}
+                  {t(stageNames[p.decision.next_stage])}
                 </span>
                 <button
                   className="secondary"
                   disabled={reopen.isPending}
-                  aria-label={`Reabrir simulação de ${p.title}`}
+                  aria-label={t("Reopen simulation for {{title}}", {
+                    title: p.title,
+                  })}
                   onClick={() => reopen.mutate(p.id)}
                 >
                   <FlaskConical size={14} />
-                  Reabrir
+                  {t("Reopen")}
                 </button>
               </article>
             ))}
@@ -529,9 +549,10 @@ function Dashboard({
       <div className="bottom-note">
         <ShieldCheck size={18} />
         <p>
-          <strong>A biblioteca fica com os seus Arr.</strong> O Prontarr planeja
-          a sequência. Importação e substituição continuam sendo
-          responsabilidade do Radarr e Sonarr na futura integração.
+          <strong>{t("Your Arr apps manage the library.")}</strong>
+          {t(
+            "Prontarr plans the sequence. Radarr and Sonarr handle imports and replacement.",
+          )}
         </p>
       </div>
     </>
@@ -540,7 +561,7 @@ function Dashboard({
 function ErrorNotice({ error }: { error: Error | null }) {
   return error ? (
     <p className="error" role="alert">
-      {error.message}
+      {t(error.message)}
     </p>
   ) : null;
 }
@@ -549,7 +570,7 @@ function PolicyEditor() {
     queryKey: ["policy"],
     queryFn: () => api<Policy>("/policy"),
   });
-  if (policy.isPending) return <p>Carregando política…</p>;
+  if (policy.isPending) return <p>{t("Loading policy…")}</p>;
   if (policy.isError) return <ErrorNotice error={policy.error} />;
   return <PolicyForm initial={policy.data} />;
 }
@@ -568,11 +589,12 @@ function PolicyForm({ initial }: { initial: Policy }) {
     <>
       <div className="page-heading">
         <div>
-          <span className="eyebrow">PRIMEIRA CÓPIA E UPGRADE</span>
-          <h1>Perfis de download</h1>
+          <span className="eyebrow">{t("FIRST COPY AND UPGRADE")}</span>
+          <h1>{t("Download profiles")}</h1>
           <p>
-            Perfis e limites padrão para novos planos e simulações. O limite de
-            tamanho se aplica ao torrent inteiro.
+            {t(
+              "Default profiles and limits for new plans and simulations. The size limit applies to the entire torrent.",
+            )}
           </p>
         </div>
       </div>
@@ -584,10 +606,10 @@ function PolicyForm({ initial }: { initial: Policy }) {
         }}
       >
         <ProfilesSettings value={draft} onChange={update} />
-        <h2>Limites da primeira cópia</h2>
+        <h2>{t("First-copy limits")}</h2>
         <div className="form-grid">
           <label>
-            Tamanho máximo (GiB)
+            {t("Maximum size (GiB)")}
             <input
               type="number"
               min="0.1"
@@ -602,7 +624,7 @@ function PolicyForm({ initial }: { initial: Policy }) {
             />
           </label>
           <label>
-            Mínimo de seeds
+            {t("Minimum seeders")}
             <input
               type="number"
               min="1"
@@ -613,7 +635,7 @@ function PolicyForm({ initial }: { initial: Policy }) {
             />
           </label>
           <label>
-            Resolução mínima
+            {t("Minimum resolution")}
             <select
               value={draft.min_resolution}
               onChange={(e) =>
@@ -625,7 +647,7 @@ function PolicyForm({ initial }: { initial: Policy }) {
             </select>
           </label>
           <label>
-            Resolução máxima
+            {t("Maximum resolution")}
             <select
               value={draft.max_resolution}
               onChange={(e) =>
@@ -640,19 +662,20 @@ function PolicyForm({ initial }: { initial: Policy }) {
         <div className="info-line">
           <ShieldCheck size={18} />
           <span>
-            Áudio original, aprovação pelo Arr e exclusão de remux são
-            obrigatórios nesta versão.
+            {t(
+              "Original audio, Arr approval and remux exclusion are required in this version.",
+            )}
           </span>
         </div>
         <ErrorNotice error={save.error} />
         <div className="form-actions">
           <button className="primary" disabled={save.isPending}>
-            Salvar política
+            {t("Save policy")}
           </button>
           {save.isSuccess && (
             <span className="success" role="status">
               <Check size={16} />
-              Política salva
+              {t("Policy saved")}
             </span>
           )}
         </div>
@@ -669,7 +692,7 @@ function Simulator({ initial }: { initial?: Input }) {
     return policy.isError ? (
       <ErrorNotice error={policy.error} />
     ) : (
-      <p>Carregando política…</p>
+      <p>{t("Loading policy…")}</p>
     );
   return (
     <SimulatorForm
@@ -725,7 +748,7 @@ function SimulatorForm({
   }
   function example() {
     update({
-      title: "Filme de exemplo",
+      title: t("Example movie"),
       policy,
       snapshot: {
         stage: "missing",
@@ -736,7 +759,7 @@ function SimulatorForm({
       candidates: [
         {
           id: "example-compact",
-          title: "1080p · compacto · áudio original",
+          title: t("1080p · compact · original audio"),
           bytes: 2 * GiB,
           seeders: 120,
           resolution: 1080,
@@ -746,7 +769,7 @@ function SimulatorForm({
         },
         {
           id: "example-large",
-          title: "2160p · HDR · áudio original",
+          title: t("2160p · HDR · original audio"),
           bytes: 35 * GiB,
           seeders: 80,
           resolution: 2160,
@@ -761,11 +784,12 @@ function SimulatorForm({
     <>
       <div className="page-heading">
         <div>
-          <span className="eyebrow">DECISÕES EXPLICÁVEIS</span>
-          <h1>Simulador de downloads</h1>
+          <span className="eyebrow">{t("EXPLAINABLE DECISIONS")}</span>
+          <h1>{t("Download simulator")}</h1>
           <p>
-            Informe candidatos e o estado de importação. Nenhuma ação será
-            executada.
+            {t(
+              "Enter candidates and import status. No actions will be executed.",
+            )}
           </p>
         </div>
         <button
@@ -773,7 +797,7 @@ function SimulatorForm({
           disabled={simulate.isPending || save.isPending}
           onClick={example}
         >
-          Carregar exemplo
+          {t("Load example")}
         </button>
       </div>
       <form
@@ -784,20 +808,20 @@ function SimulatorForm({
       >
         <fieldset disabled={simulate.isPending || save.isPending}>
           <div className="card form-card">
-            <h2>O que estamos planejando?</h2>
+            <h2>{t("What are we planning?")}</h2>
             <div className="form-grid">
               <label>
-                Título
+                {t("Title")}
                 <input
                   required
                   maxLength={300}
-                  placeholder="Filme ou série"
+                  placeholder={t("Movie or series")}
                   value={input.title}
                   onChange={(e) => update({ ...input, title: e.target.value })}
                 />
               </label>
               <label>
-                Etapa atual
+                {t("Current stage")}
                 <select
                   value={input.snapshot.stage}
                   onChange={(e) =>
@@ -812,13 +836,13 @@ function SimulatorForm({
                 >
                   {Object.entries(stageNames).map(([k, v]) => (
                     <option key={k} value={k}>
-                      {v}
+                      {t(v)}
                     </option>
                   ))}
                 </select>
               </label>
               <label>
-                Itens no escopo
+                {t("Items in scope")}
                 <input
                   type="number"
                   min="1"
@@ -836,11 +860,11 @@ function SimulatorForm({
                   }
                 />
                 <small>
-                  1 para filme ou episódio; total de episódios para pacote.
+                  {t("1 for a movie or episode; total episodes for a pack.")}
                 </small>
               </label>
               <label>
-                Itens com arquivo importado
+                {t("Items with imported files")}
                 <input
                   type="number"
                   min="0"
@@ -873,12 +897,12 @@ function SimulatorForm({
                   })
                 }
               />
-              Importação do upgrade confirmada para todos os itens
+              {t("Upgrade import confirmed for all items")}
             </label>
           </div>
           <section className="section">
             <div className="section-heading">
-              <h2>Versões candidatas</h2>
+              <h2>{t("Candidate releases")}</h2>
               <button
                 type="button"
                 className="text-button"
@@ -889,7 +913,7 @@ function SimulatorForm({
                       ...input.candidates,
                       {
                         id: crypto.randomUUID(),
-                        title: "Nova versão",
+                        title: t("New release"),
                         bytes: 2 * GiB,
                         seeders: 10,
                         resolution: 1080,
@@ -902,17 +926,20 @@ function SimulatorForm({
                 }
               >
                 <Plus size={16} />
-                Adicionar
+                {t("Add")}
               </button>
             </div>
             <p className="muted">
-              Limite: {(input.policy.max_compact_bytes / GiB).toFixed(1)} GiB ·{" "}
-              {input.policy.min_seeders}+ seeds · {input.policy.min_resolution}–
-              {input.policy.max_resolution}p. Valores de seeds são estimativas.
+              {t("Limit:")}
+              {(input.policy.max_compact_bytes / GiB).toFixed(1)} GiB ·{" "}
+              {input.policy.min_seeders}
+              {t("+ seeds ·")} {input.policy.min_resolution}–
+              {input.policy.max_resolution}
+              {t("p. Seeder counts are estimates.")}
             </p>
             {input.candidates.length === 0 && (
               <div className="candidate-empty">
-                Adicione versões ou carregue o exemplo para comparar.
+                {t("Add releases or load the example to compare.")}
               </div>
             )}
             {input.candidates.map((c, i) => (
@@ -925,7 +952,9 @@ function SimulatorForm({
                     {String(i + 1).padStart(2, "0")}
                   </span>
                   <label className="candidate-title">
-                    <span className="sr-only">Nome da versão {i + 1}</span>
+                    <span className="sr-only">
+                      {t("Release name")} {i + 1}
+                    </span>
                     <input
                       required
                       value={c.title}
@@ -935,7 +964,9 @@ function SimulatorForm({
                   <button
                     className="icon-button"
                     type="button"
-                    aria-label={`Remover versão ${i + 1}`}
+                    aria-label={t("Remove release {{number}}", {
+                      number: i + 1,
+                    })}
                     onClick={() =>
                       update({
                         ...input,
@@ -948,7 +979,7 @@ function SimulatorForm({
                 </div>
                 <div className="form-grid three">
                   <label>
-                    Tamanho (GiB)
+                    {t("Size (GiB)")}
                     <input
                       required
                       type="number"
@@ -976,7 +1007,7 @@ function SimulatorForm({
                     />
                   </label>
                   <label>
-                    Resolução
+                    {t("Resolution")}
                     <select
                       value={c.resolution}
                       onChange={(e) =>
@@ -1000,7 +1031,7 @@ function SimulatorForm({
                         candidate(i, { original_audio: e.target.checked })
                       }
                     />
-                    Áudio original
+                    {t("Original audio")}
                   </label>
                   <label className="checkbox">
                     <input
@@ -1010,7 +1041,7 @@ function SimulatorForm({
                         candidate(i, { arr_approved: e.target.checked })
                       }
                     />
-                    Aprovado pelo Arr
+                    {t("Approved by Arr")}
                   </label>
                   <label className="checkbox">
                     <input
@@ -1026,7 +1057,7 @@ function SimulatorForm({
                 {decision?.candidate_id === c.id && (
                   <span className="selected-label">
                     <Check size={14} />
-                    Escolhida na simulação
+                    {t("Selected in simulation")}
                   </span>
                 )}
               </div>
@@ -1035,15 +1066,15 @@ function SimulatorForm({
           <ErrorNotice error={simulate.error} />
           <button className="primary" disabled={simulate.isPending}>
             <FlaskConical size={17} />
-            {simulate.isPending ? "Avaliando…" : "Simular decisão"}
+            {simulate.isPending ? t("Evaluating…") : t("Simulate decision")}
           </button>
         </fieldset>
       </form>
       {decision && (
         <section className="decision" aria-live="polite">
-          <span className="eyebrow">PRÓXIMA AÇÃO · SIMULADA</span>
-          <h2>{actionNames[decision.action]}</h2>
-          <p>{decision.reason}</p>
+          <span className="eyebrow">{t("NEXT ACTION · SIMULATED")}</span>
+          <h2>{t(actionNames[decision.action])}</h2>
+          <p>{t(decision.reason)}</p>
           <div className="form-actions">
             <button
               className="secondary"
@@ -1053,13 +1084,15 @@ function SimulatorForm({
               {save.isSuccess ? (
                 <>
                   <Check size={16} />
-                  Plano salvo
+                  {t("Plan saved")}
                 </>
               ) : (
-                "Salvar no histórico"
+                t("Save to history")
               )}
             </button>
-            <span className="muted">Nenhum comando enviado aos seus apps.</span>
+            <span className="muted">
+              {t("No commands were sent to your apps.")}
+            </span>
           </div>
           <ErrorNotice error={save.error} />
         </section>

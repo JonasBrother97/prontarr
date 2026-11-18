@@ -1626,3 +1626,25 @@ progress::-moz-progress-bar {
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
+.toolbar-preferences {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.language-picker select {
+  background: #282828;
+  color: #ddd;
+  border: 1px solid #505050;
+  border-radius: 3px;
+  padding: 5px;
+  font-size: 12px;
+  max-width: 105px;
+}
+@media (max-width: 760px) {
+  .toolbar-preferences {
+    gap: 5px;
+  }
+  .toolbar-preferences .mode {
+    display: none;
+  }
+}

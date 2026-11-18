@@ -31,10 +31,6 @@ Research date: **2026-11-18**. Versions were checked against upstream repositori
 - Lucide: https://lucide.dev/guide/packages/lucide-react
 - Exact published versions: https://registry.npmjs.org/
 
-## Known tooling advisory
+## Current dependency audit
 
-On the research date, `npm audit` reports **GHSA-fc5q-39xc-vjpf**, a high-severity regular-expression denial-of-service advisory affecting `picomatch <=4.0.7`, with dependent reports on fdir, tinyglobby, Vite and the React plugin (five affected dependency entries, not five independent root vulnerabilities). The registry's latest picomatch is 4.0.7, so there is no published patched version to pin yet.
-
-https://github.com/advisories/GHSA-fc5q-39xc-vjpf
-
-This dependency belongs to the local build/development toolchain, not the frontend runtime bundle. Do not expose the development server or build untrusted projects. `npm audit --omit=dev` is separately checked. No automatic `--force` downgrade or audit suppression was applied. Recheck before distributing development environments or enabling CI on untrusted pull requests.
+After adding i18next 27.1.5 and react-i18next 18.0.2, `npm audit` reports zero vulnerabilities for the resolved lockfile. Versions are pinned. Earlier development-only advisory findings are historical; rerun the audit when updating packages.

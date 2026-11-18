@@ -1,3 +1,4 @@
+import { t, locale } from "./i18n.ts";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
@@ -40,15 +41,15 @@ type Report = {
   } | null;
 };
 const stages: Record<string, string> = {
-  queued: "Na fila de análise",
-  analyzing: "Consultando fontes",
-  ready: "Pronto para revisão",
-  claiming: "Obtendo controle exclusivo",
-  compact: "Baixando primeira cópia",
-  upgrading: "Aguardando upgrade",
-  completed: "Concluído",
-  review: "Requer atenção",
-  cancelled: "Cancelado",
+  queued: "Queued for analysis",
+  analyzing: "Searching releases",
+  ready: "Ready for review",
+  claiming: "Acquiring exclusive control",
+  compact: "Downloading first copy",
+  upgrading: "Downloading upgrade",
+  completed: "Completed",
+  review: "Needs attention",
+  cancelled: "Cancelled",
 };
 export function Jobs() {
   const cache = useQueryClient();
@@ -134,18 +135,19 @@ export function Jobs() {
     <section className="jobs-page">
       <div className="section-heading">
         <div>
-          <h1>Planos de execução</h1>
-          <p>Uma cópia disponível primeiro, qualidade melhor depois.</p>
+          <h1>{t("Execution plans")}</h1>
+          <p>{t("A watchable copy first. Better quality later.")}</p>
         </div>
       </div>
       <div className="card job-create">
-        <h2>Analisar um título</h2>
+        <h2>{t("Analyze a title")}</h2>
         <p>
-          A busca consulta o Arr e respeita seu perfil. Criar uma análise não
-          inicia downloads.
+          {t(
+            "Searches query Arr and respect its profile. Creating an analysis does not start downloads.",
+          )}
         </p>
         <label>
-          Título
+          {t("Title")}
           <select
             value={media}
             onChange={(e) => {
@@ -153,22 +155,22 @@ export function Jobs() {
               setEpisode("");
             }}
           >
-            <option value="">Selecione na biblioteca</option>
+            <option value="">{t("Select from your library")}</option>
             {library.data?.items.map((x) => (
               <option key={`${x.app}:${x.id}`} value={`${x.app}:${x.id}`}>
-                {x.app === "radarr" ? "Filme" : "Série"} · {x.title}
+                {x.app === "radarr" ? t("Movie") : t("Series")} · {x.title}
               </option>
             ))}
           </select>
         </label>
         {chosen?.app === "sonarr" && (
           <label>
-            Episódio
+            {t("Episode")}
             <select
               value={episode}
               onChange={(e) => setEpisode(e.target.value)}
             >
-              <option value="">Selecione um episódio</option>
+              <option value="">{t("Select an episode")}</option>
               {episodes.data?.items.map((x) => (
                 <option key={x.id} value={x.id}>
                   S{x.season}E{x.episode} · {x.title}
@@ -184,7 +186,7 @@ export function Jobs() {
           }
           onClick={() => create.mutate()}
         >
-          {create.isPending ? "Criando…" : "Analisar fontes"}
+          {create.isPending ? t("Creating…") : t("Analyze releases")}
         </button>
       </div>
       {(jobs.error ||
@@ -207,19 +209,19 @@ export function Jobs() {
         </p>
       )}
       <div className="card">
-        <h2>Histórico persistido</h2>
+        <h2>{t("Saved history")}</h2>
         {jobs.isPending ? (
-          <p>Carregando planos…</p>
+          <p>{t("Loading plans…")}</p>
         ) : !jobs.data?.items.length ? (
-          <p>Nenhum plano criado.</p>
+          <p>{t("No plans yet.")}</p>
         ) : (
           <div className="table-scroll">
             <table>
               <thead>
                 <tr>
-                  <th>Título</th>
-                  <th>Aplicação</th>
-                  <th>Etapa</th>
+                  <th>{t("Title")}</th>
+                  <th>{t("Application")}</th>
+                  <th>{t("Stage")}</th>
                   <th></th>
                 </tr>
               </thead>
@@ -228,14 +230,14 @@ export function Jobs() {
                   <tr key={j.id}>
                     <td>{j.title}</td>
                     <td>{j.target.app}</td>
-                    <td>{stages[j.stage] ?? j.stage}</td>
+                    <td>{t(stages[j.stage] ?? j.stage)}</td>
                     <td>
                       <button
                         className="secondary"
                         onClick={() => setSelected(j.id)}
                         aria-pressed={selected === j.id}
                       >
-                        Detalhes
+                        {t("Details")}
                       </button>
                     </td>
                   </tr>
@@ -249,12 +251,13 @@ export function Jobs() {
         <div className="card job-detail">
           <h2>{data.job.title}</h2>
           <p>
-            {stages[data.job.stage] ?? data.job.stage} · {report?.profile_name}
+            {t(stages[data.job.stage] ?? data.job.stage)} ·{" "}
+            {report?.profile_name}
           </p>
           {data.job.error_code && (
             <p className="error" role="alert">
-              {data.job.error_code}. A execução requer revisão antes de
-              continuar.
+              {data.job.error_code}
+              {t(". Review is required before execution can continue.")}
             </p>
           )}
           <div className="job-actions">
@@ -269,7 +272,7 @@ export function Jobs() {
                 action.mutate({ id: data.job.id, action: "start" })
               }
             >
-              Iniciar plano
+              {t("Start plan")}
             </button>
             <button
               className="secondary"
@@ -282,7 +285,7 @@ export function Jobs() {
                 action.mutate({ id: data.job.id, action: "analyze" })
               }
             >
-              Reanalisar com padrões atuais
+              {t("Reanalyze with current defaults")}
             </button>
             <button
               className="secondary"
@@ -294,62 +297,70 @@ export function Jobs() {
                 action.mutate({ id: data.job.id, action: "cancel" })
               }
             >
-              Cancelar e liberar controle
+              {t("Cancel and release control")}
             </button>
           </div>
           {!data.execution_allowed && (
             <p>
-              Execução desativada para este título. A análise continua
-              disponível.
+              {t(
+                "Execution is disabled for this title. Analysis is still available.",
+              )}
             </p>
           )}
           {report?.scope && (
             <p>
-              Pacote {report.scope.verified ? "verificado" : "não confirmado"}:{" "}
-              {report.scope.selected_episode_ids.length} episódio(s)
-              selecionado(s); {report.scope.absent_queue_episode_ids.length}{" "}
-              item(ns) da fila ausente(s) do torrent.{" "}
-              {report.scope.warnings.join(" ")}
+              {t("Pack")}
+              {report.scope.verified ? t("verified") : t("unverified")}:{" "}
+              {report.scope.selected_episode_ids.length}
+              {t("selected episode(s);")}
+              {report.scope.absent_queue_episode_ids.length}{" "}
+              {t("queue item(s) missing from the torrent.")}{" "}
+              {report.scope.warnings.map((w) => t(w)).join(" ")}
             </p>
           )}
           {report && (
             <p>
-              <strong>Perfil inicial:</strong>{" "}
+              <strong>{t("Initial profile:")}</strong>{" "}
               {report.initial_profile_name ??
-                "Perfil do título + limites compactos"}
+                t("Title profile + compact limits")}
               <br />
-              <strong>Perfil final:</strong> {report.profile_name}
+              <strong>{t("Final profile:")}</strong> {report.profile_name}
               <br />
               <small>
-                Proteções do Arr:{" "}
-                {report.native_profile_name ?? report.profile_name}. Perfis
-                registrados na análise deste plano.
+                {t("Arr safeguards:")}{" "}
+                {report.native_profile_name ?? report.profile_name}
+                {t(". Profiles recorded when this plan was analyzed.")}
               </small>
             </p>
           )}
-          <h3>Fontes escolhidas</h3>
+          <h3>{t("Selected releases")}</h3>
           {selectedCandidates.length === 0 ? (
-            <p>Nenhuma fonte elegível confirmada.</p>
+            <p>{t("No eligible release confirmed.")}</p>
           ) : (
             selectedCandidates.map((c) => (
               <div className="candidate-choice" key={c.id}>
                 <strong>
                   {c.id === report?.compact_candidate_id
-                    ? "Primeira cópia"
+                    ? t("First copy")
                     : "Upgrade"}
                 </strong>
                 <p>{c.title}</p>
                 <p>
-                  {c.quality} · {(c.bytes / 1024 ** 3).toFixed(2)} GiB ·{" "}
-                  {c.seeds} seeds · formatos {c.format_score}
+                  {c.quality} ·{" "}
+                  {(c.bytes / 1024 ** 3).toLocaleString(locale(), {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}{" "}
+                  GiB · {c.seeds} {t("seeds · format score")} {c.format_score}
                 </p>
-                <small>{c.reason}</small>
+                <small>{t(c.reason)}</small>
               </div>
             ))
           )}
           <details>
             <summary>
-              Todas as fontes ({report?.candidates.length ?? 0})
+              {t("All releases (")}
+              {report?.candidates.length ?? 0})
             </summary>
             {report?.candidates.map((c) => (
               <p key={c.id}>
@@ -357,17 +368,21 @@ export function Jobs() {
                   {c.native_approved ? "✓" : "—"} {c.title}
                 </strong>
                 <br />
-                {c.quality} · {(c.bytes / 1024 ** 3).toFixed(2)} GiB · {c.seeds}{" "}
-                seeds · {c.reason}
+                {c.quality} ·{" "}
+                {(c.bytes / 1024 ** 3).toLocaleString(locale(), {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}{" "}
+                GiB · {c.seeds} seeds · {t(c.reason)}
               </p>
             ))}
           </details>
-          <h3>Eventos</h3>
+          <h3>{t("Events")}</h3>
           <ol className="job-events">
             {data.events.map((e) => (
               <li key={e.id}>
-                <time>{new Date(e.created_at).toLocaleString("pt-BR")}</time>
-                <p>{e.detail}</p>
+                <time>{new Date(e.created_at).toLocaleString(locale())}</time>
+                <p>{t(e.detail)}</p>
               </li>
             ))}
           </ol>

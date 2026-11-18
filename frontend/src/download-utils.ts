@@ -1,3 +1,4 @@
+import { t, locale } from "./i18n.ts";
 export type StatusFilter =
   "all" | "downloading" | "paused" | "completed" | "review";
 export type SortOrder = "original" | "name" | "speed" | "size" | "progress";
@@ -48,7 +49,7 @@ export function orderRows<T>(
   if (order === "original") return [...rows];
   return [...rows].sort((a, b) => {
     if (order === "name")
-      return title(a).localeCompare(title(b), "pt-BR", {
+      return title(a).localeCompare(title(b), locale(), {
         numeric: true,
         sensitivity: "base",
       });
@@ -64,14 +65,18 @@ export function orderRows<T>(
 export function freshness(observedAt: number, now: number) {
   const seconds = Math.max(0, Math.floor((now - observedAt) / 1000));
   if (observedAt - now > 60_000)
-    return { stale: true, label: "Confira o relógio do servidor" };
+    return { stale: true, label: t("Check the server clock") };
   return {
     stale: seconds >= 60,
     label:
       seconds < 60
-        ? "Dados recentes"
+        ? t("Recent data")
         : seconds < 3600
-          ? `Dados de ${Math.floor(seconds / 60)} min atrás`
-          : `Dados de ${Math.floor(seconds / 3600)} h atrás`,
+          ? t("Data from {{count}} min ago", {
+              count: Math.floor(seconds / 60),
+            })
+          : t("Data from {{count}} h ago", {
+              count: Math.floor(seconds / 3600),
+            }),
   };
 }

@@ -100,20 +100,20 @@ pub fn formatScore(profile: J.Value, object: J.Value) ?i64 {
     return total;
 }
 pub fn compare(profile: J.Value, current_quality: ?i64, current_score: ?i64, next_quality: i64, next_score: i64) Comparison {
-    if (!(J.flag(profile, "upgradeAllowed") orelse false)) return .{ .better = false, .reason = "Upgrades desativados no perfil nativo." };
-    const before = qualityRank(profile, current_quality orelse return .{ .better = null, .reason = "Qualidade atual desconhecida." }) orelse return .{ .better = null, .reason = "Qualidade atual não está no perfil." };
-    const after = qualityRank(profile, next_quality) orelse return .{ .better = false, .reason = "Qualidade candidata não está no perfil." };
-    if (!after.allowed or next_score < (J.num(profile, "minFormatScore") orelse 0)) return .{ .better = false, .reason = "Qualidade ou formatos não são permitidos pelo perfil." };
+    if (!(J.flag(profile, "upgradeAllowed") orelse false)) return .{ .better = false, .reason = "Upgrades are disabled in the native profile." };
+    const before = qualityRank(profile, current_quality orelse return .{ .better = null, .reason = "Current quality is unknown." }) orelse return .{ .better = null, .reason = "Current quality is not in the profile." };
+    const after = qualityRank(profile, next_quality) orelse return .{ .better = false, .reason = "Candidate quality is not in the profile." };
+    if (!after.allowed or next_score < (J.num(profile, "minFormatScore") orelse 0)) return .{ .better = false, .reason = "Quality or formats are not allowed by the profile." };
     if (J.num(profile, "cutoff")) |cutoff| {
         if (qualityRank(profile, cutoff)) |limit| {
-            if (before.rank >= limit.rank and current_score != null and current_score.? >= (J.num(profile, "cutoffFormatScore") orelse 0)) return .{ .better = false, .reason = "Limites de qualidade e formatos do perfil já atingidos." };
+            if (before.rank >= limit.rank and current_score != null and current_score.? >= (J.num(profile, "cutoffFormatScore") orelse 0)) return .{ .better = false, .reason = "The profile quality and format cutoffs have already been met." };
         }
     }
-    if (after.rank > before.rank) return .{ .better = true, .reason = "Qualidade superior na hierarquia do perfil nativo." };
-    if (after.rank < before.rank) return .{ .better = false, .reason = "Qualidade inferior na hierarquia do perfil nativo." };
-    const score = current_score orelse return .{ .better = null, .reason = "Pontuação atual desconhecida; não presumir upgrade dentro da mesma qualidade." };
+    if (after.rank > before.rank) return .{ .better = true, .reason = "Higher quality in the native profile hierarchy." };
+    if (after.rank < before.rank) return .{ .better = false, .reason = "Lower quality in the native profile hierarchy." };
+    const score = current_score orelse return .{ .better = null, .reason = "Current score is unknown; do not assume an upgrade within the same quality." };
     const better = next_score > score and next_score - score >= (J.num(profile, "minUpgradeFormatScore") orelse 1);
-    return .{ .better = better, .reason = if (better) "Mesma qualidade, com ganho de formatos suficiente no perfil." else "Não atinge o ganho mínimo de formatos do perfil." };
+    return .{ .better = better, .reason = if (better) "Same quality, with sufficient format improvement for the profile." else "Does not meet the profile minimum format improvement." };
 }
 pub fn selectedProfileId(policy: E.Policy, app: AppKind, initial: bool) ?i64 {
     const pair = if (app == .radarr) policy.radarr_profiles else policy.sonarr_profiles;
@@ -202,12 +202,12 @@ pub fn scope(a: A, config: T.Config, ref: Ref, m: J.Value) !Scope {
                 }
             }
         }
-        if (ids.items.len == 0 or priority == null) try warnings.append(a, try std.fmt.allocPrint(a, "Arquivo sem escopo ou prioridade confirmados: {s}", .{base}));
+        if (ids.items.len == 0 or priority == null) try warnings.append(a, try std.fmt.allocPrint(a, "File scope or priority is unconfirmed: {s}", .{base}));
         try manifest.append(a, .{ .name = name, .selected = enabled, .episode_ids = ids.items });
     }
     var absent: std.ArrayList(i64) = .empty;
     const queue = try get(a, c, "/api/v3/queue?page=1&pageSize=1000&includeEpisode=true");
-    if ((J.num(queue, "totalRecords") orelse 1001) > 1000) try warnings.append(a, "Fila nativa parcial; pacote não pode ser confirmado.");
+    if ((J.num(queue, "totalRecords") orelse 1001) > 1000) try warnings.append(a, "Native queue is partial; the pack cannot be confirmed.");
     for (J.items(queue, "records")) |record| {
         const other = J.str(record, "downloadId") orelse continue;
         if (!std.ascii.eqlIgnoreCase(other, hash)) continue;
@@ -304,7 +304,7 @@ pub fn analyze(a: A, io: std.Io, config: T.Config, reference: Ref, policy: E.Pol
                     } else if (!comparison.better.?) upgrade = false;
                 }
                 if (!allowed or !final_ok or disallowed_3d) upgrade = false;
-                const native_reason = if (J.items(raw, "rejections").len > 0) "Rejeitado pelo Arr; consulte os detalhes no aplicativo de origem." else if (!original) "Idioma original não confirmado." else if (disallowed_3d) "Versão 3D excluída da primeira cópia." else if (!allowed) "Não foi aprovado pelo perfil nativo." else "Aprovado pelo perfil nativo; disponibilidade é estimada por seeds e tamanho.";
+                const native_reason = if (J.items(raw, "rejections").len > 0) "Rejected by Arr; check the details in the source application." else if (!original) "Original language is unconfirmed." else if (disallowed_3d) "3D release excluded from the first copy." else if (!allowed) "Not approved by the native profile." else "Approved by the native profile; availability is estimated from seeders and size.";
                 const id = try J.hash(a, try std.fmt.allocPrint(a, "{d}:{s}", .{ indexer, guid }));
                 const candidate = Candidate{ .id = id, .title = release_title, .bytes = @intCast(size), .seeds = @intCast(@min(seeds, std.math.maxInt(u32))), .resolution = @intCast(resolution), .quality_id = qid, .quality = J.str(q, "name") orelse "Unknown", .format_score = score, .original_audio = original, .native_approved = allowed and !disallowed_3d, .compact = is_compact, .upgrade = upgrade, .reason = native_reason, .surround_hint = try surround(a, raw, release_title) };
                 const idx = candidates.items.len;

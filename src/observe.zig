@@ -31,7 +31,7 @@ pub const Item = struct {
     multi_episode_download: bool = false,
     queue_scope_partial: bool = false,
     advice: Advice = .needs_review,
-    reason: []const u8 = "Não há dados suficientes para recomendar uma mudança.",
+    reason: []const u8 = "Not enough data to recommend a change.",
     torrent: ?Torrent = null,
 };
 pub const Service = struct {
@@ -68,7 +68,7 @@ const Record = struct {
     movieId: ?i64 = null,
     seriesId: ?i64 = null,
     episodeId: ?i64 = null,
-    title: []const u8 = "Sem título",
+    title: []const u8 = "Untitled",
     downloadId: ?[]const u8 = null,
     status: []const u8 = "unknown",
     quality: Quality = .{},
@@ -105,31 +105,31 @@ pub fn recommend(item: *Item, policy: engine.Policy) void {
     const torrent = item.torrent.?;
     if (std.mem.startsWith(u8, torrent.state, "stopped") or std.mem.startsWith(u8, torrent.state, "paused")) {
         item.advice = .respect_pause;
-        item.reason = "Download pausado. Pode ser uma decisão manual ou da automação existente; preservar a pausa.";
+        item.reason = "Download is paused, possibly manually or by existing automation; preserve the pause.";
     } else if (item.multi_episode_download) {
         item.advice = .needs_review;
-        item.reason = "O mesmo torrent aparece em vários episódios. Confirmar o escopo completo do pacote antes de sugerir qualquer mudança.";
+        item.reason = "The same torrent appears in multiple episodes. Confirm the full pack scope before suggesting any changes.";
     } else if (item.queue_scope_partial) {
         item.advice = .needs_review;
-        item.reason = "A fila de episódios está parcial; confirmar o escopo completo antes de sugerir qualquer mudança.";
+        item.reason = "The episode queue is partial; confirm the full scope before suggesting any changes.";
     } else if (item.has_file.?) {
         item.advice = .keep_upgrade;
-        item.reason = "Já há um arquivo importado. Preservar a cópia disponível enquanto o Arr avalia o download em andamento.";
+        item.reason = "An imported file already exists. Keep the watchable copy while Arr evaluates the current download.";
     } else if (torrent.progress >= 0.10) {
         item.advice = .wait_for_import;
-        item.reason = "Download já ultrapassou 10%; preservar o progresso e aguardar a importação.";
+        item.reason = "Download has passed 10%; preserve progress and wait for import.";
     } else if (torrent.bytes == 0 or item.resolution == 0 or std.mem.eql(u8, torrent.state, "metaDL") or std.mem.eql(u8, torrent.state, "forcedMetaDL")) {
         item.advice = .needs_review;
-        item.reason = "Metadados ou tamanho ainda não estão confirmados; não sugerir troca de fonte.";
+        item.reason = "Metadata or size is not confirmed; do not suggest a release replacement.";
     } else if (item.resolution < policy.min_resolution or (item.custom_format_score orelse 0) < 0 or std.mem.eql(u8, torrent.state, "error") or std.mem.eql(u8, torrent.state, "missingFiles")) {
         item.advice = .needs_review;
-        item.reason = "Qualidade, pontuação ou estado do torrent exigem revisão; preservar o download atual.";
+        item.reason = "Quality, score or torrent state requires review; preserve the current download.";
     } else if (torrent.bytes > policy.max_compact_bytes or item.resolution > policy.max_resolution) {
         item.advice = .consider_compact;
-        item.reason = "Ainda sem cópia disponível e download grande no início. Avaliar uma alternativa compacta; nenhuma busca ou troca foi executada.";
+        item.reason = "No watchable copy yet and a large download has just started. Consider a compact alternative; no search or replacement was performed.";
     } else {
         item.advice = .wait_for_import;
-        item.reason = "Primeira cópia dentro dos limites de tamanho e resolução. Aguardar a confirmação de importação pelo Arr.";
+        item.reason = "First copy meets size and resolution limits. Wait for Arr to confirm import.";
     }
 }
 
@@ -225,10 +225,10 @@ pub fn collect(allocator: Allocator, io: std.Io, config: transport.Config, polic
                         item.episode_number = state.episode_number;
                         recommend(&item, policy);
                     } else |_| {
-                        item.reason = "Não foi possível confirmar o arquivo ou o escopo do episódio; preservar o estado atual.";
+                        item.reason = "Could not verify the file or episode scope; preserve the current state.";
                     }
                 } else {
-                    item.reason = "Limite de tempo da observação atingido; verificar o estado em outra consulta.";
+                    item.reason = "Observation time limit reached; check the status in another query.";
                 }
                 try items.append(allocator, item);
             }

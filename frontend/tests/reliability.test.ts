@@ -154,7 +154,7 @@ test("network and timeout errors receive useful messages", async () => {
     (e) =>
       e instanceof ApiError &&
       e.kind === "network" &&
-      /conectar/.test(e.message),
+      /connect/.test(e.message),
   );
   globalThis.fetch = async () => {
     throw new DOMException("timeout", "TimeoutError");
@@ -192,7 +192,7 @@ test("structured API errors preserve status and requests stay same-origin", asyn
     (e) =>
       e instanceof ApiError &&
       e.status === 404 &&
-      e.message === "Plano não encontrado.",
+      e.message === "Plan not found.",
   );
   assert.equal(sent?.method, "POST");
   assert.equal(sent?.body, '{"title":"Fixture"}');

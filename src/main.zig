@@ -21,14 +21,14 @@ const App = struct {
         res.header("Referrer-Policy", "no-referrer");
         res.header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
         const host = req.header("host") orelse "";
-        if (!std.mem.eql(u8, host, "127.0.0.1:5882") and !std.mem.eql(u8, host, "localhost:5882")) return failure(res, 403, "Host não permitido; use localhost:5882.");
+        if (!std.mem.eql(u8, host, "127.0.0.1:5882") and !std.mem.eql(u8, host, "localhost:5882")) return failure(res, 403, "Host is not allowed; use localhost:5882.");
         if (req.header("origin")) |origin| {
             const allowed = [_][]const u8{ "http://127.0.0.1:5882", "http://localhost:5882", "http://127.0.0.1:5173", "http://localhost:5173" };
             var ok = false;
             for (allowed) |value| if (std.mem.eql(u8, origin, value)) {
                 ok = true;
             };
-            if (!ok) return failure(res, 403, "Origem não permitida.");
+            if (!ok) return failure(res, 403, "Origin is not allowed.");
         }
         if (req.method == .POST or req.method == .PUT) {
             const content_type = req.header("content-type") orelse "";
@@ -36,12 +36,12 @@ const App = struct {
         }
         action(self, req, res) catch |err| {
             std.log.err("request failed: {s}", .{@errorName(err)});
-            return failure(res, 500, "Falha interna; consulte o log local.");
+            return failure(res, 500, "Internal error; check the local log.");
         };
     }
 
     pub fn notFound(_: *App, _: *httpz.Request, res: *httpz.Response) !void {
-        return failure(res, 404, "Rota não encontrada.");
+        return failure(res, 404, "Route not found.");
     }
 };
 
@@ -90,8 +90,10 @@ pub fn main(init: std.process.Init) !void {
     var background = try init.io.concurrent(controller.Runtime.run, .{&runtime});
     defer background.cancel(init.io) catch {};
     var app = App{ .io = init.io, .pool = pool, .connections = connections, .controller = &runtime };
+    const bind = init.environ_map.get("PRONTARR_BIND") orelse "127.0.0.1";
+    if (!std.mem.eql(u8, bind, "127.0.0.1") and !std.mem.eql(u8, bind, "0.0.0.0")) return error.InvalidListenAddress;
     var server = try httpz.Server(*App).init(init.io, init.gpa, .{
-        .address = .localhost(5882),
+        .address = .{ .ip = try std.Io.net.IpAddress.parseIp4(bind, 5882) },
         .request = .{ .max_body_size = 1024 * 1024 },
         .thread_pool = .{ .count = 4 },
     }, &app);
@@ -147,7 +149,7 @@ fn connectionInfo(app: *App, _: *httpz.Request, res: *httpz.Response) !void {
     try res.json(.{ .items = items, .live_actions_enabled = false }, .{});
 }
 fn observeLive(app: *App, _: *httpz.Request, res: *httpz.Response) !void {
-    if (!app.observation_lock.tryLock()) return failure(res, 409, "Já há uma observação em andamento. Aguarde a conclusão.");
+    if (!app.observation_lock.tryLock()) return failure(res, 409, "An observation is already running. Wait for it to finish.");
     defer app.observation_lock.unlock(app.io);
     const conn = try app.pool.acquire(app.io);
     var policy = engine.Policy{};
@@ -202,12 +204,12 @@ fn getPolicy(app: *App, _: *httpz.Request, res: *httpz.Response) !void {
     } else try res.json(engine.Policy{}, .{});
 }
 fn putPolicy(app: *App, req: *httpz.Request, res: *httpz.Response) !void {
-    const policy = (req.json(engine.Policy) catch return failure(res, 400, "Política inválida.")) orelse return failure(res, 400, "Política ausente.");
-    engine.validate(.{ .title = "policy", .policy = policy }) catch return failure(res, 400, "Configuração inválida: IDs de perfil, seeds e tamanho devem ser positivos; resolução máxima da primeira cópia é 1080p.");
+    const policy = (req.json(engine.Policy) catch return failure(res, 400, "Invalid policy.")) orelse return failure(res, 400, "Missing policy.");
+    engine.validate(.{ .title = "policy", .policy = policy }) catch return failure(res, 400, "Invalid configuration: profile IDs, seeders and size must be positive; first-copy resolution is limited to 1080p.");
     for ([_]planner.AppKind{ .radarr, .sonarr }) |kind| {
         for ([_]bool{ true, false }) |initial| {
             if (planner.selectedProfileId(policy, kind, initial)) |id| {
-                _ = planner.loadProfile(res.arena, app.connections, kind, id) catch return failure(res, 400, "Perfil não encontrado ou Arr indisponível. Atualize a lista de perfis.");
+                _ = planner.loadProfile(res.arena, app.connections, kind, id) catch return failure(res, 400, "Profile not found or Arr unavailable. Refresh the profile list.");
             }
         }
     }
@@ -219,10 +221,10 @@ fn putPolicy(app: *App, req: *httpz.Request, res: *httpz.Response) !void {
 }
 fn readInput(req: *httpz.Request, res: *httpz.Response) !?engine.Input {
     const input = (req.json(engine.Input) catch {
-        try failure(res, 400, "Dados da simulação inválidos.");
+        try failure(res, 400, "Invalid simulation data.");
         return null;
     }) orelse {
-        try failure(res, 400, "Corpo ausente.");
+        try failure(res, 400, "Missing request body.");
         return null;
     };
     engine.validate(input) catch |err| {
@@ -264,11 +266,11 @@ fn plans(app: *App, _: *httpz.Request, res: *httpz.Response) !void {
 }
 
 fn getPlan(app: *App, req: *httpz.Request, res: *httpz.Response) !void {
-    const id = std.fmt.parseInt(i64, req.param("id") orelse "", 10) catch return failure(res, 400, "Identificador de plano inválido.");
-    if (id <= 0) return failure(res, 400, "Identificador de plano inválido.");
+    const id = std.fmt.parseInt(i64, req.param("id") orelse "", 10) catch return failure(res, 400, "Invalid plan ID.");
+    if (id <= 0) return failure(res, 400, "Invalid plan ID.");
     const conn = try app.pool.acquire(app.io);
     defer app.pool.release(app.io, conn);
-    const row = (try conn.row("SELECT id,input,decision,created_at FROM plans WHERE id=?1", .{id})) orelse return failure(res, 404, "Plano não encontrado.");
+    const row = (try conn.row("SELECT id,input,decision,created_at FROM plans WHERE id=?1", .{id})) orelse return failure(res, 404, "Plan not found.");
     defer row.deinit();
     const input = try std.json.parseFromSliceLeaky(engine.Input, res.arena, row.text(1), .{ .allocate = .alloc_always });
     const decision = try std.json.parseFromSliceLeaky(engine.Decision, res.arena, row.text(2), .{ .allocate = .alloc_always });
@@ -284,8 +286,8 @@ fn liveJobs(app: *App, _: *httpz.Request, res: *httpz.Response) !void {
     try res.json(.{ .items = try app.controller.summaries(res.arena), .execution_enabled = app.connections.execution.enabled }, .{});
 }
 fn createLiveJob(app: *App, req: *httpz.Request, res: *httpz.Response) !void {
-    const input = (req.json(struct { target: planner.Ref }) catch return failure(res, 400, "Referência de mídia inválida.")) orelse return failure(res, 400, "Dados ausentes.");
-    planner.validate(input.target) catch return failure(res, 400, "Referência de mídia inválida.");
+    const input = (req.json(struct { target: planner.Ref }) catch return failure(res, 400, "Invalid media reference.")) orelse return failure(res, 400, "Missing data.");
+    planner.validate(input.target) catch return failure(res, 400, "Invalid media reference.");
     const db = try app.pool.acquire(app.io);
     var policy = engine.Policy{};
     {
@@ -300,23 +302,23 @@ fn createLiveJob(app: *App, req: *httpz.Request, res: *httpz.Response) !void {
     try res.json(.{ .id = id }, .{});
 }
 fn liveJob(app: *App, req: *httpz.Request, res: *httpz.Response) !void {
-    const id = jobId(req) catch return failure(res, 400, "Identificador inválido.");
-    const state = app.controller.load(res.arena, id) catch return failure(res, 404, "Plano não encontrado.");
+    const id = jobId(req) catch return failure(res, 400, "Invalid ID.");
+    const state = app.controller.load(res.arena, id) catch return failure(res, 404, "Plan not found.");
     try res.json(.{ .job = controller.summary(id, state), .report = if (state.analysis) |value| value.report else null, .events = try app.controller.events(res.arena, id), .execution_allowed = app.controller.allowed(state.target) }, .{});
 }
 fn startLiveJob(app: *App, req: *httpz.Request, res: *httpz.Response) !void {
-    const id = jobId(req) catch return failure(res, 400, "Identificador inválido.");
+    const id = jobId(req) catch return failure(res, 400, "Invalid ID.");
     app.controller.requestStart(res.arena, id) catch |err| return failure(res, 409, @errorName(err));
     res.status = 202;
     try res.json(.{ .accepted = true }, .{});
 }
 fn cancelLiveJob(app: *App, req: *httpz.Request, res: *httpz.Response) !void {
-    const id = jobId(req) catch return failure(res, 400, "Identificador inválido.");
+    const id = jobId(req) catch return failure(res, 400, "Invalid ID.");
     app.controller.cancel(res.arena, id) catch |err| return failure(res, 409, @errorName(err));
     try res.json(.{ .accepted = true }, .{});
 }
 fn analyzeLiveJob(app: *App, req: *httpz.Request, res: *httpz.Response) !void {
-    const id = jobId(req) catch return failure(res, 400, "Identificador inválido.");
+    const id = jobId(req) catch return failure(res, 400, "Invalid ID.");
     app.controller.reanalyze(res.arena, id) catch |err| return failure(res, 409, @errorName(err));
     try res.json(.{ .accepted = true }, .{});
 }
@@ -333,8 +335,8 @@ fn library(app: *App, _: *httpz.Request, res: *httpz.Response) !void {
     try res.json(.{ .items = out.items }, .{});
 }
 fn libraryEpisodes(app: *App, req: *httpz.Request, res: *httpz.Response) !void {
-    if (!std.mem.eql(u8, req.param("app") orelse "", "sonarr")) return failure(res, 400, "Aplicação inválida.");
-    const id = jobId(req) catch return failure(res, 400, "Série inválida.");
+    if (!std.mem.eql(u8, req.param("app") orelse "", "sonarr")) return failure(res, 400, "Invalid application.");
+    const id = jobId(req) catch return failure(res, 400, "Invalid series.");
     const values = try planner.get(res.arena, try planner.connection(app.connections, .sonarr), try std.fmt.allocPrint(res.arena, "/api/v3/episode?seriesId={d}", .{id}));
     const Episode = struct { id: i64, title: []const u8, season: i64, episode: i64, has_file: bool };
     var out: std.ArrayList(Episode) = .empty;

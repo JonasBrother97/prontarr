@@ -89,7 +89,7 @@ pub const Runtime = struct {
         if (state.analysis.?.report.created_at_ms + 5 * 60 * 1000 < std.Io.Timestamp.now(self.io, .real).toMilliseconds()) return error.AnalysisExpired;
         state.stage = .claiming;
         state.error_code = null;
-        try self.save(a, id, &state, "execution_requested", "Execução solicitada para o escopo permitido.");
+        try self.save(a, id, &state, "execution_requested", "Execution requested for the allowed scope.");
     }
     pub fn cancel(self: *Runtime, a: A, id: i64) !void {
         const state = try self.load(a, id);
@@ -97,7 +97,7 @@ pub const Runtime = struct {
         const db = try self.pool.acquire(self.io);
         defer self.pool.release(self.io, db);
         try db.exec("UPDATE live_jobs SET cancel_requested=1 WHERE id=?1", .{id});
-        try db.exec("INSERT INTO live_events(job_id,kind,detail) VALUES(?1,'cancel_requested','Cancelamento solicitado; downloads não serão removidos.')", .{id});
+        try db.exec("INSERT INTO live_events(job_id,kind,detail) VALUES(?1,'cancel_requested','Cancellation requested; downloads will not be removed.')", .{id});
     }
     pub fn reanalyze(self: *Runtime, a: A, id: i64) !void {
         var state = try self.load(a, id);
@@ -117,7 +117,7 @@ pub const Runtime = struct {
         state.upgrade_hash = null;
         state.baseline = &.{};
         state.generation += 1;
-        try self.save(a, id, &state, "analysis_requested", "Nova análise solicitada com os perfis e limites padrão atuais.");
+        try self.save(a, id, &state, "analysis_requested", "New analysis requested with current default profiles and limits.");
     }
     pub fn allowed(self: *const Runtime, ref: P.Ref) bool {
         if (!self.config.execution.enabled) return false;
@@ -172,7 +172,7 @@ pub const Runtime = struct {
                 try self.compensate(a, job.id, &state);
                 state.stage = .cancelled;
                 state.cancel_requested = false;
-                try self.save(a, job.id, &state, "cancelled", "Plano cancelado; cópias preservadas.");
+                try self.save(a, job.id, &state, "cancelled", "Plan cancelled; copies preserved.");
                 return;
             }
             switch (state.stage) {
@@ -192,7 +192,7 @@ pub const Runtime = struct {
                     state.target = analysis.report.target;
                     state.stage = .ready;
                     state.error_code = null;
-                    try self.save(a, job.id, &state, "analysis_ready", "Análise persistida; nenhuma fonte foi baixada.");
+                    try self.save(a, job.id, &state, "analysis_ready", "Analysis saved; no release was downloaded.");
                     return;
                 },
                 .claiming, .compact, .upgrading => {
@@ -212,7 +212,7 @@ pub const Runtime = struct {
                     };
                     if (had_error) {
                         state.error_code = null;
-                        try self.save(a, job.id, &state, "external_recovered", "Conexão e verificações restabelecidas; plano retomado.");
+                        try self.save(a, job.id, &state, "external_recovered", "Connection and checks restored; plan resumed.");
                     }
                     return;
                 },
@@ -242,7 +242,7 @@ pub const Runtime = struct {
     fn ensureOwner(self: *Runtime, a: A, id: i64, state: *State) !void {
         const was_unclaimed = state.token == null;
         try self.coordinator(a, id, state, false);
-        if (was_unclaimed) try self.save(a, id, state, "ownership_confirmed", "Prontarr é o único controlador deste escopo.");
+        if (was_unclaimed) try self.save(a, id, state, "ownership_confirmed", "Prontarr is the exclusive controller for this scope.");
     }
     fn nativeProfile(self: *Runtime, a: A, state: State) !J.Value {
         const m = try P.media(a, self.config, state.target);
@@ -293,7 +293,7 @@ pub const Runtime = struct {
         if (state.original_stopped) {
             if (state.target.original_hash) |hash| try self.controlTorrent(a, id, state.*, hash, true);
             state.original_stopped = false;
-            try self.save(a, id, state, "original_resumed", "Progresso do download original preservado.");
+            try self.save(a, id, state, "original_resumed", "Original download progress preserved.");
         }
     }
     fn compensate(self: *Runtime, a: A, id: i64, state: *State) !void {
@@ -321,7 +321,7 @@ pub const Runtime = struct {
             _ = T.mutate(a, try P.connection(self.config, state.target.app), .arr_grab, payload) catch |err| {
                 try self.effectStatus(id, key, "uncertain");
                 if (err == error.UpstreamTimeout or err == error.UpstreamUnavailable) {
-                    try self.save(a, id, state, "grab_uncertain", "Resposta incerta; não repetir o grab. Reconciliar a fila ou a importação.");
+                    try self.save(a, id, state, "grab_uncertain", "Uncertain response; do not repeat the grab. Reconcile the queue or import.");
                     return;
                 }
                 return err;
@@ -357,7 +357,7 @@ pub const Runtime = struct {
             };
             state.stage = .upgrading;
             state.upgrade_sent_at_ms = std.Io.Timestamp.now(self.io, .real).toMilliseconds();
-            try self.save(a, id, state, "upgrade_planned", "Versão já disponível; executar apenas o upgrade confirmado.");
+            try self.save(a, id, state, "upgrade_planned", "A watchable copy is already available; request only the verified upgrade.");
             try self.grab(a, id, state, target, true);
             try self.save(a, id, state, "", "");
             return;
@@ -376,12 +376,12 @@ pub const Runtime = struct {
                 const p: f64 = if (progress == .float) progress.float else if (progress == .integer) @floatFromInt(progress.integer) else 1;
                 if (p >= 0.1) return error.RespectExistingProgress;
                 state.original_stopped = true;
-                try self.save(a, id, state, "original_stop_planned", "Registrar compensação antes de pausar o original.");
+                try self.save(a, id, state, "original_stop_planned", "Record recovery actions before pausing the original.");
                 try self.controlTorrent(a, id, state.*, hash, false);
             }
             state.stage = .compact;
             state.compact_sent_at_ms = std.Io.Timestamp.now(self.io, .real).toMilliseconds();
-            try self.save(a, id, state, "awaiting_compact", "Primeira cópia em andamento; biblioteca preservada.");
+            try self.save(a, id, state, "awaiting_compact", "First copy is downloading; library preserved.");
             try self.grab(a, id, state, selected, false);
             try self.save(a, id, state, "", " ");
             return;
@@ -395,7 +395,7 @@ pub const Runtime = struct {
                 return;
             }
             state.baseline = current;
-            try self.save(a, id, state, "compact_imported", "Arquivo importado confirmado em todos os itens; registrar identidades antes do upgrade.");
+            try self.save(a, id, state, "compact_imported", "Imported files confirmed for all items; recording file identities before upgrading.");
             if (state.target.original_hash != null) {
                 return error.OriginalUpgradeNeedsVerification;
             }
@@ -406,7 +406,7 @@ pub const Runtime = struct {
             }
             state.stage = .upgrading;
             state.upgrade_sent_at_ms = std.Io.Timestamp.now(self.io, .real).toMilliseconds();
-            try self.save(a, id, state, "upgrade_planned", "Upgrade confirmado pelo perfil; primeira cópia permanece disponível.");
+            try self.save(a, id, state, "upgrade_planned", "Upgrade confirmed by the profile; first copy remains available.");
             try self.grab(a, id, state, target, true);
             try self.save(a, id, state, "", "");
             return;
@@ -424,7 +424,7 @@ pub const Runtime = struct {
                 }
                 try self.compensate(a, id, state);
                 state.stage = .completed;
-                try self.save(a, id, state, "completed", "Arr importou o upgrade e substituiu a cópia da biblioteca. Nenhum arquivo foi apagado diretamente pelo Prontarr.");
+                try self.save(a, id, state, "completed", "Arr imported the upgrade and replaced the library copy. Prontarr did not directly delete any files.");
                 return;
             }
             if (state.target.original_hash != null) {
@@ -438,7 +438,7 @@ pub const Runtime = struct {
     }
 };
 pub fn summary(id: i64, state: State) Summary {
-    return .{ .id = id, .target = state.target, .title = if (state.analysis) |analysis| analysis.report.title else "Analisando título…", .stage = state.stage, .error_code = state.error_code, .created_at_ms = state.created_at_ms, .updated_at_ms = state.updated_at_ms, .compact_hash = state.compact_hash, .upgrade_hash = state.upgrade_hash };
+    return .{ .id = id, .target = state.target, .title = if (state.analysis) |analysis| analysis.report.title else "Analyzing title…", .stage = state.stage, .error_code = state.error_code, .created_at_ms = state.created_at_ms, .updated_at_ms = state.updated_at_ms, .compact_hash = state.compact_hash, .upgrade_hash = state.upgrade_hash };
 }
 pub fn migrate(conn: DB.Conn) !void {
     try conn.execNoArgs(

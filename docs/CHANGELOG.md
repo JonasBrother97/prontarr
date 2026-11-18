@@ -1,3 +1,9 @@
+## Internationalization and publication setup
+
+- English UI and backend messages by default, with bundled en/pt-BR catalogs and a persistent language picker.
+- Localized dates, numeric formatting, accessible labels and historical Portuguese events.
+- MIT license, Docker/Compose packaging and pinned CI actions for tests and Docker Hub version releases.
+
 ## Profile selection
 
 - Independent initial/final native profile choices for movies and series, with quality summaries.

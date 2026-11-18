@@ -12,6 +12,8 @@ This is an experimental pilot, not a general replacement for every existing cont
 
 Implemented:
 
+- English by default, Brazilian Portuguese translation and a persistent language selector.
+
 - Selectable initial/final profiles per Arr, discovered from native APIs and snapshotted per plan.
 - Persisted execution plans, source comparison, event journal, cancellation and explicit reanalysis.
 - Idempotent release requests across restarts and exclusive ownership per media.
@@ -88,3 +90,15 @@ See [changelog](docs/CHANGELOG.md), [example request](docs/example-input.json), 
 ## Status and distribution
 
 Local development repository; no upstream remote, publication or deployment is configured. Working name **Prontarr** is provisional. Public release and licensing are still to be decided. Do not expose this prototype through a reverse proxy or tunnel: authentication has not been implemented, and the server intentionally accepts only loopback hosts.
+
+## Containers and CI
+
+See [publication setup](docs/publication.md) for the non-root Docker image, local Compose service, automated tests and Docker Hub release workflow.
+
+## Language
+
+English is the default UI language; Brazilian Portuguese is available in the header. See [internationalization](docs/i18n.md).
+
+## License
+
+[MIT](LICENSE). Third-party dependencies retain their own licenses.

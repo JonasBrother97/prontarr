@@ -1,3 +1,4 @@
+import { t, locale } from "./i18n.ts";
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -69,39 +70,39 @@ const names: Record<string, string> = {
   qbittorrent: "qBittorrent",
 };
 const advice: Record<string, string> = {
-  wait_for_import: "Aguardar importação",
-  consider_compact: "Avaliar cópia compacta",
-  keep_upgrade: "Preservar cópia disponível",
-  respect_pause: "Respeitar pausa",
-  needs_review: "Revisar informações",
+  wait_for_import: "Wait for import",
+  consider_compact: "Consider a compact copy",
+  keep_upgrade: "Keep the watchable copy",
+  respect_pause: "Respect pause",
+  needs_review: "Review information",
 };
 const errors: Record<string, string> = {
-  UpstreamUnauthorized: "Acesso não autorizado. Verifique a chave ou sessão.",
-  UpstreamTimeout: "O serviço excedeu o tempo de resposta.",
-  UpstreamUnavailable: "O serviço não respondeu. Verifique a conexão.",
+  UpstreamUnauthorized: "Unauthorized. Check the API key or session.",
+  UpstreamTimeout: "The service timed out.",
+  UpstreamUnavailable: "The service did not respond. Check the connection.",
   UpstreamRedirectBlocked:
-    "O serviço redirecionou a consulta. Confira o endereço direto da API.",
+    "The service redirected the request. Check the direct API URL.",
   InvalidUpstreamCertificate:
-    "O certificado TLS do serviço não pôde ser validado.",
-  InvalidUpstreamResponse: "O serviço retornou dados inesperados.",
-  ResponseTooLarge: "A resposta ultrapassou o limite de segurança.",
+    "The service TLS certificate could not be verified.",
+  InvalidUpstreamResponse: "The service returned unexpected data.",
+  ResponseTooLarge: "The response exceeded the safety limit.",
 };
 function size(n: number) {
   if (n <= 0) return "0 B";
   const units = ["B", "KiB", "MiB", "GiB", "TiB"];
   const exponent = Math.min(Math.floor(Math.log(n) / Math.log(1024)), 4);
-  return `${(n / 1024 ** exponent).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} ${units[exponent]}`;
+  return `${(n / 1024 ** exponent).toLocaleString(locale(), { maximumFractionDigits: 1 })} ${units[exponent]}`;
 }
-function eta(t: Torrent) {
-  if (t.progress >= 1) return "Baixado";
-  if (t.eta_seconds === null) return "Sem previsão";
-  const minutes = Math.max(1, Math.ceil(t.eta_seconds / 60));
+function eta(torrent: Torrent) {
+  if (torrent.progress >= 1) return t("Downloaded");
+  if (torrent.eta_seconds === null) return t("No estimate");
+  const minutes = Math.max(1, Math.ceil(torrent.eta_seconds / 60));
   return minutes < 60
     ? `${minutes} min`
     : `${Math.floor(minutes / 60)}h ${minutes % 60}min`;
 }
 function Progress({ torrent }: { torrent: Torrent | null }) {
-  if (!torrent) return <span className="muted">Sem correspondência</span>;
+  if (!torrent) return <span className="muted">{t("No match")}</span>;
   return (
     <div className="progress-cell">
       <span>
@@ -110,7 +111,7 @@ function Progress({ torrent }: { torrent: Torrent | null }) {
       <progress
         max={1}
         value={torrent.progress}
-        aria-label={`Progresso de ${torrent.name}`}
+        aria-label={t("Progress for {{title}}", { title: torrent.name })}
       />
     </div>
   );
@@ -204,10 +205,12 @@ export function Live() {
     <>
       <section className="page-heading">
         <div>
-          <span className="eyebrow">OBSERVAÇÃO · DADOS REAIS</span>
-          <h1>Fila de downloads</h1>
+          <span className="eyebrow">{t("OBSERVATION · LIVE DATA")}</span>
+          <h1>{t("Download queue")}</h1>
           <p>
-            Consulte a fila e compare as sugestões sem alterar nenhum torrent.
+            {t(
+              "View the queue and compare suggestions without changing any torrent.",
+            )}
           </p>
         </div>
         <button
@@ -220,10 +223,10 @@ export function Live() {
             className={observation.isFetching ? "spin" : ""}
           />
           {observation.isFetching
-            ? "Consultando…"
+            ? t("Querying…")
             : data
-              ? "Atualizar observação"
-              : "Consultar serviços"}
+              ? t("Refresh observation")
+              : t("Query services")}
         </button>
       </section>
       <div className="refresh-controls">
@@ -233,18 +236,18 @@ export function Live() {
             checked={autoRefresh}
             onChange={(event) => setAutoRefresh(event.target.checked)}
           />
-          Atualizar a cada 30 segundos
+          {t("Refresh every 30 seconds")}
         </label>
         <span className="muted">
           {autoRefresh
-            ? "Pausa quando a aba está oculta."
-            : "Consulta manual; nenhum comando altera os downloads."}
+            ? t("Pauses while the tab is hidden.")
+            : t("Manual query; no commands change your downloads.")}
         </span>
       </div>
       {(configuration.error || observation.error) && (
         <p role="alert" className="error">
-          {(observation.error ?? configuration.error)?.message}
-          {data && " Os dados abaixo são da última consulta concluída."}
+          {t((observation.error ?? configuration.error)?.message ?? "")}
+          {data && t(" The data below comes from the last completed query.")}
         </p>
       )}
       <div className="service-grid">
@@ -261,19 +264,19 @@ export function Live() {
             </div>
             <p>
               {service.connected
-                ? `${age?.stale || observation.isError ? "Na última consulta" : "Conectado"} · ${service.version}`
+                ? `${age?.stale || observation.isError ? t("At last query") : t("Connected")} · ${service.version}`
                 : service.error_code
-                  ? (errors[service.error_code] ??
-                    "Falha ao consultar o serviço.")
+                  ? (t(errors[service.error_code] ?? service.error_code) ??
+                    t("Failed to query the service."))
                   : service.configured
-                    ? "Configurado · aguardando consulta"
-                    : "Conexão não configurada"}
+                    ? t("Configured · awaiting query")
+                    : t("Connection not configured")}
             </p>
             <small>
-              Somente leitura
+              {t("Read only")}
               {service.connected &&
-                ` · ${service.total_records} ${service.name === "qbittorrent" ? "torrents" : "registros na fila"}`}
-              {service.truncated && " · lista parcial"}
+                ` · ${service.total_records} ${service.name === "qbittorrent" ? "torrents" : t("queue records")}`}
+              {service.truncated && t(" · partial list")}
             </small>
           </article>
         ))}
@@ -283,8 +286,8 @@ export function Live() {
           <div className="observation-summary">
             <span>
               <Check size={14} />
-              Última consulta:{" "}
-              {new Date(data.observed_at_ms).toLocaleString("pt-BR")}
+              {t("Last query:")}{" "}
+              {new Date(data.observed_at_ms).toLocaleString(locale())}
             </span>
             <span
               className={
@@ -294,7 +297,7 @@ export function Live() {
               }
             >
               {observation.isError
-                ? "Consulta falhou · dados anteriores"
+                ? t("Query failed · previous data")
                 : age?.label}
             </span>
           </div>
@@ -308,7 +311,8 @@ export function Live() {
                     setPage(0);
                   }}
                 >
-                  Fila dos Arr <span>{data.items.length}</span>
+                  {t("Arr queue")}
+                  <span>{data.items.length}</span>
                 </button>
                 <button
                   className={view === "torrents" ? "active" : ""}
@@ -322,9 +326,9 @@ export function Live() {
               </div>
               <label className="search-box">
                 <Search size={16} />
-                <span className="sr-only">Filtrar por título</span>
+                <span className="sr-only">{t("Filter by title")}</span>
                 <input
-                  placeholder="Filtrar por título…"
+                  placeholder={t("Filter by title…")}
                   maxLength={200}
                   value={filter}
                   onChange={(e) => {
@@ -336,7 +340,7 @@ export function Live() {
             </div>
             <div className="filter-controls">
               <label>
-                Situação
+                {t("Status")}
                 <select
                   value={effectiveStatus}
                   onChange={(event) => {
@@ -344,17 +348,17 @@ export function Live() {
                     setPage(0);
                   }}
                 >
-                  <option value="all">Todas</option>
-                  <option value="downloading">Em download</option>
-                  <option value="paused">Pausados</option>
-                  <option value="completed">Concluídos</option>
+                  <option value="all">{t("All")}</option>
+                  <option value="downloading">{t("Downloading")}</option>
+                  <option value="paused">{t("Paused")}</option>
+                  <option value="completed">{t("Completed")}</option>
                   {view === "arr" && (
-                    <option value="review">Precisam de revisão</option>
+                    <option value="review">{t("Needs review")}</option>
                   )}
                 </select>
               </label>
               <label>
-                Ordenar por
+                {t("Sort by")}
                 <select
                   value={sortOrder}
                   onChange={(event) => {
@@ -362,11 +366,11 @@ export function Live() {
                     setPage(0);
                   }}
                 >
-                  <option value="original">Ordem da fila</option>
-                  <option value="name">Título A–Z</option>
-                  <option value="speed">Maior velocidade</option>
-                  <option value="size">Maior tamanho</option>
-                  <option value="progress">Menor progresso</option>
+                  <option value="original">{t("Queue order")}</option>
+                  <option value="name">{t("Title A–Z")}</option>
+                  <option value="speed">{t("Highest speed")}</option>
+                  <option value="size">{t("Largest size")}</option>
+                  <option value="progress">{t("Lowest progress")}</option>
                 </select>
               </label>
               {(filter ||
@@ -381,19 +385,24 @@ export function Live() {
                     setPage(0);
                   }}
                 >
-                  Limpar filtros
+                  {t("Clear filters")}
                 </button>
               )}
               <span className="result-count">
                 {count
-                  ? `${currentPage * 20 + 1}–${Math.min((currentPage + 1) * 20, count)} de ${count}`
-                  : "0 resultados"}
+                  ? t("{{start}}–{{end}} of {{count}}", {
+                      start: currentPage * 20 + 1,
+                      end: Math.min((currentPage + 1) * 20, count),
+                      count,
+                    })
+                  : t("0 results")}
               </span>
             </div>
             {data.services.some((service) => service.truncated) && (
               <p className="partial-notice">
-                Lista parcial: a consulta exibe até 25 registros por Arr e 500
-                torrents. Os filtros se aplicam aos itens consultados.
+                {t(
+                  "Partial list: up to 25 records per Arr and 500 torrents. Filters apply to the retrieved items.",
+                )}
               </p>
             )}
             <DownloadTable
@@ -413,13 +422,15 @@ export function Live() {
                 <LayersIcon />
                 <h3>
                   {filter || effectiveStatus !== "all"
-                    ? "Nenhum download corresponde aos filtros"
-                    : "Nenhum registro nesta lista"}
+                    ? t("No downloads match your filters")
+                    : t("No records in this list")}
                 </h3>
                 <p>
                   {filter || effectiveStatus !== "all"
-                    ? "Altere o nome ou a situação, ou limpe os filtros."
-                    : "Os serviços podem estar sem downloads na fila ou indisponíveis; confira os estados acima."}
+                    ? t("Change the title or status, or clear the filters.")
+                    : t(
+                        "Services may have empty queues or be unavailable; check their status above.",
+                      )}
                 </p>
               </div>
             )}
@@ -430,7 +441,7 @@ export function Live() {
                   disabled={currentPage === 0}
                   onClick={() => setPage(currentPage - 1)}
                 >
-                  Anterior
+                  {t("Previous")}
                 </button>
                 <span>
                   {currentPage + 1} / {lastPage + 1}
@@ -440,7 +451,7 @@ export function Live() {
                   disabled={currentPage >= lastPage}
                   onClick={() => setPage(currentPage + 1)}
                 >
-                  Próxima
+                  {t("Next")}
                 </button>
               </div>
             )}
@@ -449,20 +460,21 @@ export function Live() {
       ) : (
         <div className="empty live-empty">
           <Activity size={29} />
-          <h3>Observe antes de automatizar</h3>
+          <h3>{t("Observe before automating")}</h3>
           <p>
-            A consulta lê os serviços configurados. Chaves e cookies nunca são
-            retornados ao navegador.
+            {t(
+              "This query reads configured services. Keys and cookies are never returned to the browser.",
+            )}
           </p>
         </div>
       )}
       <div className="bottom-note">
         <ShieldCheck size={18} />
         <p>
-          <strong>Esta consulta é somente leitura.</strong> A observação não faz
-          buscas nos indexadores e não pausa, remove, retoma ou substitui
-          downloads. A atualização de 30 segundos é opcional e fica desativada
-          ao reabrir a página.
+          <strong>{t("This query is read only.")}</strong>
+          {t(
+            "Observation does not search indexers, pause, remove, resume or replace downloads. The optional 30-second refresh is disabled when you reopen the page.",
+          )}
         </p>
       </div>
     </>
@@ -494,12 +506,12 @@ function DownloadTable({
           .join(" · "),
         note:
           item.has_file === null
-            ? "Arquivo não verificado"
+            ? t("File not verified")
             : item.has_file
-              ? "Versão disponível"
-              : "Aguardando importação",
+              ? t("Watchable copy available")
+              : t("Awaiting import"),
         torrent: item.torrent,
-        status: advice[item.advice],
+        status: t(advice[item.advice]),
         tone:
           item.advice === "needs_review" || item.advice === "consider_compact"
             ? "warning"
@@ -512,16 +524,16 @@ function DownloadTable({
         origin: "qBittorrent",
         note:
           torrent.progress >= 1
-            ? "Download concluído"
-            : "Download em andamento",
+            ? t("Download completed")
+            : t("Download in progress"),
         torrent,
         status: /^(stopped|paused)/.test(torrent.state)
-          ? "Pausado"
+          ? t("Paused")
           : torrent.progress >= 1
-            ? "Em seed"
+            ? t("Seeding")
             : torrent.state === "stalledDL"
-              ? "Sem transferência"
-              : "Baixando",
+              ? t("No transfer")
+              : t("Downloading"),
         tone: torrent.progress >= 1 ? "success" : "neutral",
         reason: null,
       }));
@@ -530,16 +542,16 @@ function DownloadTable({
     <div className="download-table-wrap">
       <table
         className="download-table"
-        aria-label={items ? "Fila dos Arr" : "Torrents do qBittorrent"}
+        aria-label={items ? t("Arr queue") : t("qBittorrent torrents")}
       >
         <thead>
           <tr>
-            <th scope="col">Título</th>
-            <th scope="col">Progresso</th>
-            <th scope="col">Tamanho</th>
-            <th scope="col">Velocidade</th>
+            <th scope="col">{t("Title")}</th>
+            <th scope="col">{t("Progress")}</th>
+            <th scope="col">{t("Size")}</th>
+            <th scope="col">{t("Speed")}</th>
             <th scope="col">Seeds</th>
-            <th scope="col">Situação</th>
+            <th scope="col">{t("Status")}</th>
           </tr>
         </thead>
         <tbody>
@@ -553,15 +565,15 @@ function DownloadTable({
                 </small>
               </td>
               <td className="download-progress">
-                <span className="mobile-cell-label">Progresso</span>
+                <span className="mobile-cell-label">{t("Progress")}</span>
                 <Progress torrent={row.torrent} />
               </td>
               <td>
-                <span className="mobile-cell-label">Tamanho</span>
+                <span className="mobile-cell-label">{t("Size")}</span>
                 {row.torrent ? size(row.torrent.bytes) : "—"}
               </td>
               <td>
-                <span className="mobile-cell-label">Velocidade</span>
+                <span className="mobile-cell-label">{t("Speed")}</span>
                 {row.torrent ? `${size(row.torrent.download_speed)}/s` : "—"}
               </td>
               <td>
@@ -574,9 +586,9 @@ function DownloadTable({
                   <details>
                     <summary>
                       <CircleHelp size={13} />
-                      Detalhes
+                      {t("Details")}
                     </summary>
-                    <p>{row.reason}</p>
+                    <p>{t(row.reason)}</p>
                   </details>
                 )}
               </td>
