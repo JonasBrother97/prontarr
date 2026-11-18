@@ -16,7 +16,7 @@ Security checks run for pushes to main, version tags and pull requests as part o
 | Trivy | Runtime OS/library vulnerabilities; fixable high/critical findings fail |
 | SonarQube | Optional TS/Python analysis and quality gate; requires external configuration |
 
-Runtime reports and the SBOM are retained as workflow artifacts for 14 days. The image gates focus on vulnerabilities with available fixes; this does not mean unfixed issues are safe. npm/OSV policies are intentionally independent from the runtime gates. There are no blanket vulnerability allowlists or continue-on-error security gates.
+Runtime reports and the SBOM are retained as workflow artifacts for 14 days. The image gates focus on vulnerabilities with available fixes; this does not mean unfixed issues are safe. npm/OSV policies are intentionally independent from the runtime gates. The only secret exception is the exact synthetic `http://user:secret@example.test` URI in `src/tests.zig`, limited to the URI detector. There are no blanket vulnerability allowlists or continue-on-error security gates.
 
 Actions are pinned by commit. Scanner dependencies have explicit versions where configured; scanner databases still update independently. Semgrep uses local rules and disables telemetry. Secret scanning never tests credentials against providers.
 
@@ -36,4 +36,4 @@ The job checks required values and waits for the quality gate. It runs only on t
 
 ## Funding
 
-A sponsorship button needs the maintainer's real public PayPal, Buy Me a Coffee or other funding URL. No payment destination is inferred from a GitHub username or email. Once provided, it can be added to `.github/FUNDING.yml` and the README.
+The repository funding button points to the maintainer-confirmed [Buy Me a Coffee page](https://buymeacoffee.com/jonasbrother97).

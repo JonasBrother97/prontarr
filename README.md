@@ -8,6 +8,7 @@ A two-stage download companion for **Radarr, Sonarr and qBittorrent**.
 
 [![Build](https://github.com/JonasBrother97/prontarr/actions/workflows/ci.yml/badge.svg)](https://github.com/JonasBrother97/prontarr/actions/workflows/ci.yml)
 [![Docker Hub](https://img.shields.io/docker/v/jonasbrother97/prontarr?label=Docker%20Hub)](https://hub.docker.com/r/jonasbrother97/prontarr)
+[![Buy Me a Coffee](https://img.shields.io/badge/Support-Buy%20Me%20a%20Coffee-ffdd00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/jonasbrother97)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 [Getting started](#getting-started) · [Features](#features) · [Documentation](#documentation) · [Report a bug](https://github.com/JonasBrother97/prontarr/issues)
@@ -115,6 +116,10 @@ Tests use temporary databases and mock upstream services. They do not contact a 
 Bug reports should include the version, expected behavior and redacted reproduction details. Feature requests and pull requests are welcome. Never attach API keys, connection files, private library databases or raw download logs containing credentials.
 
 CI checks code, dependencies, Git history and the runtime image. See [the security guide](docs/security-ci.md) for individual tools, severity gates and optional SonarQube setup. Passing scans does not establish complete coverage of Zig or bundled native code.
+
+## Support the project
+
+If Prontarr helps your library, you can [buy me a coffee](https://buymeacoffee.com/jonasbrother97). Bug reports, translations and contributions are equally welcome.
 
 ## License and acknowledgements
 
