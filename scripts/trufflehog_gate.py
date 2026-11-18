@@ -17,9 +17,10 @@ def evaluate(report: Path, status: int) -> int:
         entry = json.loads(line)
         source = entry.get('SourceMetadata', {}).get('Data', {}).get('Git', {})
         # An exact synthetic URI from the connection validation contract.
-        # Do not exempt the file, detector or other example.test credentials.
+        # Also recognize historical copies in this gate and its documentation.
+        # Do not exempt whole files, detectors or other credentials.
         if (entry.get('DetectorName') == 'URI'
-                and source.get('file') == 'src/tests.zig'
+                and source.get('file') in {'src/tests.zig', 'scripts/trufflehog_gate.py', 'docs/security-ci.md'}
                 and entry.get('Raw') == ('http://' + 'user:secret' + '@example.test')):
             ignored += 1
             continue
