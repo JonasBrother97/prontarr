@@ -4,11 +4,15 @@ const zqlite = @import("zqlite");
 const engine = @import("engine.zig");
 const transport = @import("transport.zig");
 const observe = @import("observe.zig");
+const controller = @import("controller.zig");
+const planner = @import("planner.zig");
+const J = @import("json_helpers.zig");
 
 const App = struct {
     io: std.Io,
     pool: *zqlite.Pool,
     connections: transport.Config,
+    controller: *controller.Runtime,
     observation_lock: std.Io.Mutex = .init,
 
     pub fn dispatch(self: *App, action: httpz.Action(*App), req: *httpz.Request, res: *httpz.Response) !void {
@@ -56,8 +60,10 @@ fn migrate(conn: zqlite.Conn, _: ?*anyopaque) !void {
         \\);
         \\PRAGMA user_version=1;
     );
+    try controller.migrate(conn);
 }
 fn configure(conn: zqlite.Conn, _: ?*anyopaque) !void {
+    try conn.execNoArgs("PRAGMA synchronous=FULL");
     try conn.busyTimeout(3000);
 }
 
@@ -66,10 +72,24 @@ pub fn main(init: std.process.Init) !void {
     defer transport.deinit();
     const connections = try transport.load(init);
     const path = init.environ_map.get("PRONTARR_DB") orelse "prontarr.sqlite";
+    const process_lock = try controller.lockProcess(init.arena.allocator(), path);
+    defer controller.unlockProcess(process_lock);
     const path_z = try init.arena.allocator().dupeSentinel(u8, path, 0);
     var pool = try zqlite.Pool.init(init.gpa, .{ .path = path_z, .size = 2, .on_first_connection = migrate, .on_connection = configure });
     defer pool.deinit();
-    var app = App{ .io = init.io, .pool = pool, .connections = connections };
+    inline for (.{ "", "-wal", "-shm" }) |suffix| {
+        const name = try std.fmt.allocPrint(init.arena.allocator(), "{s}{s}", .{ path, suffix });
+        if (std.Io.Dir.cwd().openFile(init.io, name, .{})) |file| {
+            defer file.close(init.io);
+            try file.setPermissions(init.io, .fromMode(0o600));
+        } else |err| {
+            if (err != error.FileNotFound) return err;
+        }
+    }
+    var runtime = controller.Runtime{ .io = init.io, .allocator = init.gpa, .pool = pool, .config = connections };
+    var background = try init.io.concurrent(controller.Runtime.run, .{&runtime});
+    defer background.cancel(init.io) catch {};
+    var app = App{ .io = init.io, .pool = pool, .connections = connections, .controller = &runtime };
     var server = try httpz.Server(*App).init(init.io, init.gpa, .{
         .address = .localhost(5882),
         .request = .{ .max_body_size = 1024 * 1024 },
@@ -89,7 +109,15 @@ pub fn main(init: std.process.Init) !void {
     router.get("/api/plans/:id", getPlan, .{});
     router.get("/api/connections", connectionInfo, .{});
     router.post("/api/observe", observeLive, .{});
-    std.log.info("Prontarr 0.3.0 — http://127.0.0.1:5882 — read-only integrations", .{});
+    router.get("/api/jobs", liveJobs, .{});
+    router.post("/api/jobs", createLiveJob, .{});
+    router.get("/api/jobs/:id", liveJob, .{});
+    router.post("/api/jobs/:id/start", startLiveJob, .{});
+    router.post("/api/jobs/:id/cancel", cancelLiveJob, .{});
+    router.post("/api/jobs/:id/analyze", analyzeLiveJob, .{});
+    router.get("/api/library", library, .{});
+    router.get("/api/library/:app/:id/episodes", libraryEpisodes, .{});
+    std.log.info("Prontarr 0.4.0 — http://127.0.0.1:5882 — controlled execution available", .{});
     try server.listen();
 }
 
@@ -105,8 +133,8 @@ fn css(_: *App, _: *httpz.Request, res: *httpz.Response) !void {
     res.header("Content-Type", "text/css; charset=utf-8");
     res.body = @embedFile("app.css");
 }
-fn health(_: *App, _: *httpz.Request, res: *httpz.Response) !void {
-    try res.json(.{ .status = "ok", .version = "0.3.0", .mode = "read_only", .observation_available = true, .live_actions_enabled = false }, .{});
+fn health(app: *App, _: *httpz.Request, res: *httpz.Response) !void {
+    try res.json(.{ .status = "ok", .version = "0.4.0", .mode = if (app.connections.execution.enabled) "controlled" else "read_only", .observation_available = true, .live_actions_enabled = app.connections.execution.enabled }, .{});
 }
 
 fn connectionInfo(app: *App, _: *httpz.Request, res: *httpz.Response) !void {
@@ -206,4 +234,71 @@ fn getPlan(app: *App, req: *httpz.Request, res: *httpz.Response) !void {
     const input = try std.json.parseFromSliceLeaky(engine.Input, res.arena, row.text(1), .{ .allocate = .alloc_always });
     const decision = try std.json.parseFromSliceLeaky(engine.Decision, res.arena, row.text(2), .{ .allocate = .alloc_always });
     try res.json(.{ .id = row.int(0), .input = input, .decision = decision, .created_at = row.text(3), .simulation = true }, .{});
+}
+
+fn jobId(req: *httpz.Request) !i64 {
+    const id = try std.fmt.parseInt(i64, req.param("id") orelse "", 10);
+    if (id <= 0) return error.InvalidJobId;
+    return id;
+}
+fn liveJobs(app: *App, _: *httpz.Request, res: *httpz.Response) !void {
+    try res.json(.{ .items = try app.controller.summaries(res.arena), .execution_enabled = app.connections.execution.enabled }, .{});
+}
+fn createLiveJob(app: *App, req: *httpz.Request, res: *httpz.Response) !void {
+    const input = (req.json(struct { target: planner.Ref }) catch return failure(res, 400, "Referência de mídia inválida.")) orelse return failure(res, 400, "Dados ausentes.");
+    planner.validate(input.target) catch return failure(res, 400, "Referência de mídia inválida.");
+    const db = try app.pool.acquire(app.io);
+    var policy = engine.Policy{};
+    {
+        defer app.pool.release(app.io, db);
+        if (try db.row("SELECT policy FROM settings WHERE id=1", .{})) |row| {
+            defer row.deinit();
+            policy = try std.json.parseFromSliceLeaky(engine.Policy, res.arena, row.text(0), .{});
+        }
+    }
+    const id = try app.controller.create(res.arena, input.target, policy);
+    res.status = 202;
+    try res.json(.{ .id = id }, .{});
+}
+fn liveJob(app: *App, req: *httpz.Request, res: *httpz.Response) !void {
+    const id = jobId(req) catch return failure(res, 400, "Identificador inválido.");
+    const state = app.controller.load(res.arena, id) catch return failure(res, 404, "Plano não encontrado.");
+    try res.json(.{ .job = controller.summary(id, state), .report = if (state.analysis) |value| value.report else null, .events = try app.controller.events(res.arena, id), .execution_allowed = app.controller.allowed(state.target) }, .{});
+}
+fn startLiveJob(app: *App, req: *httpz.Request, res: *httpz.Response) !void {
+    const id = jobId(req) catch return failure(res, 400, "Identificador inválido.");
+    app.controller.requestStart(res.arena, id) catch |err| return failure(res, 409, @errorName(err));
+    res.status = 202;
+    try res.json(.{ .accepted = true }, .{});
+}
+fn cancelLiveJob(app: *App, req: *httpz.Request, res: *httpz.Response) !void {
+    const id = jobId(req) catch return failure(res, 400, "Identificador inválido.");
+    app.controller.cancel(res.arena, id) catch |err| return failure(res, 409, @errorName(err));
+    try res.json(.{ .accepted = true }, .{});
+}
+fn analyzeLiveJob(app: *App, req: *httpz.Request, res: *httpz.Response) !void {
+    const id = jobId(req) catch return failure(res, 400, "Identificador inválido.");
+    app.controller.reanalyze(res.arena, id) catch |err| return failure(res, 409, @errorName(err));
+    try res.json(.{ .accepted = true }, .{});
+}
+fn library(app: *App, _: *httpz.Request, res: *httpz.Response) !void {
+    const Media = struct { app: planner.AppKind, id: i64, title: []const u8, has_file: ?bool, monitored: bool };
+    var out: std.ArrayList(Media) = .empty;
+    for ([_]planner.AppKind{ .radarr, .sonarr }) |kind| {
+        const conn = planner.connection(app.connections, kind) catch continue;
+        const values = try planner.get(res.arena, conn, if (kind == .radarr) "/api/v3/movie" else "/api/v3/series");
+        for (J.array(values)) |value| {
+            try out.append(res.arena, .{ .app = kind, .id = J.num(value, "id") orelse continue, .title = J.str(value, "title") orelse continue, .has_file = J.flag(value, "hasFile"), .monitored = J.flag(value, "monitored") orelse false });
+        }
+    }
+    try res.json(.{ .items = out.items }, .{});
+}
+fn libraryEpisodes(app: *App, req: *httpz.Request, res: *httpz.Response) !void {
+    if (!std.mem.eql(u8, req.param("app") orelse "", "sonarr")) return failure(res, 400, "Aplicação inválida.");
+    const id = jobId(req) catch return failure(res, 400, "Série inválida.");
+    const values = try planner.get(res.arena, try planner.connection(app.connections, .sonarr), try std.fmt.allocPrint(res.arena, "/api/v3/episode?seriesId={d}", .{id}));
+    const Episode = struct { id: i64, title: []const u8, season: i64, episode: i64, has_file: bool };
+    var out: std.ArrayList(Episode) = .empty;
+    for (J.array(values)) |value| try out.append(res.arena, .{ .id = J.num(value, "id") orelse continue, .title = J.str(value, "title") orelse "", .season = J.num(value, "seasonNumber") orelse 0, .episode = J.num(value, "episodeNumber") orelse 0, .has_file = J.flag(value, "hasFile") orelse false });
+    try res.json(.{ .items = out.items }, .{});
 }

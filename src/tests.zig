@@ -65,3 +65,26 @@ test "large new source is only a suggestion for compact evaluation" {
     observe.recommend(&record, .{});
     try std.testing.expectEqual(observe.Advice.keep_upgrade, record.advice);
 }
+
+const planner = @import("planner.zig");
+const json = @import("json_helpers.zig");
+test "native profile groups, cutoff and format improvements" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const profile = try json.parse(arena.allocator(),
+        \\{"upgradeAllowed":true,"cutoff":1003,"cutoffFormatScore":1000,"minFormatScore":0,"minUpgradeFormatScore":50,"items":[{"id":1002,"allowed":true,"items":[{"quality":{"id":7},"allowed":true}]},{"id":1003,"allowed":true,"items":[{"quality":{"id":19},"allowed":true},{"quality":{"id":21},"allowed":true}]}]}
+    );
+    try std.testing.expectEqual(@as(i64, 1), planner.qualityRank(profile, 1003).?.rank);
+    try std.testing.expectEqual(true, planner.compare(profile, 7, 100, 19, 1000).better.?);
+    try std.testing.expectEqual(false, planner.compare(profile, 19, 1000, 21, 1100).better.?);
+    try std.testing.expectEqual(true, planner.compare(profile, 19, 100, 21, 1000).better.?);
+    try std.testing.expectEqual(false, planner.compare(profile, 19, 100, 21, 120).better.?);
+    try std.testing.expect(planner.compare(profile, 19, null, 21, 1000).better == null);
+    try std.testing.expectEqual(false, planner.compare(profile, 19, 100, 7, 1200).better.?);
+}
+test "series require explicit scope and valid torrent identity" {
+    try std.testing.expectError(error.UnknownEpisodeScope, planner.validate(.{ .app = .sonarr, .media_id = 1 }));
+    try std.testing.expectError(error.DuplicateEpisode, planner.validate(.{ .app = .sonarr, .media_id = 1, .episode_ids = &.{ 2, 2 } }));
+    try std.testing.expectError(error.InvalidTorrentHash, planner.validate(.{ .app = .radarr, .media_id = 1, .original_hash = "bad" }));
+    try planner.validate(.{ .app = .sonarr, .media_id = 1, .episode_ids = &.{2} });
+}

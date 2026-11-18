@@ -7,7 +7,11 @@ build: frontend
 run:
 	./zig-out/bin/prontarr
 test:
+	npm run build --prefix frontend
+	zig build
 	npm test --prefix frontend
 	zig build test
 	python3 tests/api_smoke.py
 	python3 tests/observe_contract.py
+	python3 tests/controller_contract.py
+	python3 tests/ownership_contract.py

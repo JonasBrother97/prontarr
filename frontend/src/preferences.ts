@@ -62,10 +62,11 @@ export const isBoolean = (value: unknown): value is boolean =>
   typeof value === "boolean";
 export const isShortText = (value: unknown): value is string =>
   typeof value === "string" && value.length <= 200;
-export type Page = "dashboard" | "live" | "simulator" | "policy";
+export type Page = "dashboard" | "live" | "simulator" | "policy" | "jobs";
 export const routes: Record<Page, string> = {
   dashboard: "#/overview",
   live: "#/downloads",
+  jobs: "#/jobs",
   simulator: "#/simulator",
   policy: "#/settings",
 };

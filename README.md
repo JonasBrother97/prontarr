@@ -4,11 +4,18 @@
 
 Prontarr is an experimental two-stage download planner for the Arr ecosystem, built with **Zig + React + TypeScript + SQLite**.
 
-## Current milestone: read-only integrations + local simulator
+## Current milestone: controlled execution pilot
 
-This repository is a working vertical slice, **not a production download controller**. It connects to Radarr, Sonarr and qBittorrent in read-only mode, explains advisory recommendations, and simulates two-stage plans. It does not pause, grab, delete or replace downloads. The existing homelab controller remains independent and untouched.
+Prontarr now analyzes native release searches and persists execution plans. Execution is **disabled by default**. An explicit media allowlist, an exclusive ownership coordinator, and a healthy VPN check are required before it can request a compact release and then an upgrade. Native Arr imports and replaces library files; Prontarr has no deletion operation.
+
+This is an experimental pilot, not a general replacement for every existing controller. See [execution and recovery](docs/execution.md) for supported scopes, setup, and limitations.
 
 Implemented:
+
+- Persisted execution plans, source comparison, event journal, cancellation and explicit reanalysis.
+- Idempotent release requests across restarts and exclusive ownership per media.
+- Native quality groups, custom-format improvements, upgrade cutoffs and file-identity checks.
+- Torrent manifest analysis maps selected episode files and reports absent queue entries.
 
 - Status filters, sorting, freshness indicators and optional 30-second observation refresh.
 - Persistent menu preferences, deep links with browser navigation, and saved simulation replay.
@@ -23,7 +30,7 @@ Implemented:
 - Explicit simulation labels and explanations, Portuguese interface, responsive layout.
 - Loopback-only listener, Host/Origin checks, request-size cap, no third-party browser requests.
 
-Reported seeds **do not guarantee download speed**. The simulator's audio and approval flags are manual inputs, not verified metadata. Future adapters must derive them from the Arr response instead of accepting them as user assertions.
+Reported seeds **do not guarantee download speed**. The simulator's audio and approval flags are manual inputs. Live analysis derives language, approval, quality and custom-format scores from the native Arr response.
 
 ## Run locally
 

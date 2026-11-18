@@ -459,10 +459,10 @@ export function Live() {
       <div className="bottom-note">
         <ShieldCheck size={18} />
         <p>
-          <strong>Seu controlador atual continua no comando.</strong> A
-          observação não faz buscas nos indexadores e não pausa, remove, retoma
-          ou substitui downloads. A atualização de 30 segundos é opcional e fica
-          desativada ao reabrir a página.
+          <strong>Esta consulta é somente leitura.</strong> A observação não faz
+          buscas nos indexadores e não pausa, remove, retoma ou substitui
+          downloads. A atualização de 30 segundos é opcional e fica desativada
+          ao reabrir a página.
         </p>
       </div>
     </>

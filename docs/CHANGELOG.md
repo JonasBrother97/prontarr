@@ -1,3 +1,12 @@
+## 0.4.0 — Controlled execution pilot
+
+- Native release analysis, quality hierarchy and custom-format comparisons.
+- Actual selected-file episode scope from qBittorrent manifests and Sonarr parsing.
+- Durable jobs, effect journal, process lock and explicit ownership coordination.
+- Compact download → native import → verified upgrade lifecycle, guarded by VPN health and media allowlists.
+- Plans UI with source comparison, events, cancellation and reanalysis.
+- Execution defaults off. Resuming an existing original torrent remains blocked pending full verification; multi-episode compact acquisition remains unsupported.
+
 # Changelog
 
 ## 0.3.0 — 2026-11-18

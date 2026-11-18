@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import "./style.css";
 import { api } from "./api";
+import { Jobs } from "./Jobs";
 import { Live } from "./Live";
 import {
   useStoredState,
@@ -145,7 +146,7 @@ function App() {
   }, []);
   useEffect(() => {
     const group =
-      page === "live"
+      page === "live" || page === "jobs"
         ? "activity"
         : page === "simulator"
           ? "tools"
@@ -182,7 +183,8 @@ function App() {
   }, [mobileMenu]);
   const health = useQuery({
     queryKey: ["health"],
-    queryFn: () => api<{ status: string }>("/health"),
+    queryFn: () =>
+      api<{ status: string; live_actions_enabled: boolean }>("/health"),
     refetchInterval: 30_000,
     retry: false,
   });
@@ -254,6 +256,13 @@ function App() {
                 >
                   Fila de downloads
                 </button>
+                <button
+                  className={page === "jobs" ? "active" : ""}
+                  aria-current={page === "jobs" ? "page" : undefined}
+                  onClick={() => navigate("jobs")}
+                >
+                  Planos de execução
+                </button>
               </div>
             )}
           </div>
@@ -321,7 +330,7 @@ function App() {
             : health.isError
               ? "Sistema indisponível"
               : "Conectando…"}
-          <small>v0.3.0 · Desenvolvimento</small>
+          <small>v0.4.0 · Desenvolvimento</small>
         </div>
       </aside>
       <main>
@@ -351,6 +360,7 @@ function App() {
                   {
                     dashboard: "Visão geral",
                     live: "Downloads",
+                    jobs: "Planos de execução",
                     simulator: "Simulador",
                     policy: "Política de download",
                   }[page]
@@ -360,15 +370,18 @@ function App() {
           </div>
           <span className="mode">
             <ShieldCheck size={14} />
-            Somente leitura
+            {health.data?.live_actions_enabled
+              ? "Execução controlada"
+              : "Somente análise"}
           </span>
         </header>
         <div className="content">
           <div className="notice">
             <FlaskConical size={16} />
             <span>
-              Observação e simulação. Consulte dados reais e avalie decisões;
-              nenhum download ou arquivo da biblioteca é alterado.
+              {health.data?.live_actions_enabled
+                ? "Execução limitada aos títulos autorizados. A importação e substituição de arquivos ficam a cargo do Sonarr e Radarr."
+                : "Análise de fontes reais e simulação. Execução de downloads desativada."}
             </span>
           </div>
           {page === "dashboard" && (
@@ -388,6 +401,7 @@ function App() {
           )}
           {page === "policy" && <PolicyEditor />}
           {page === "live" && <Live />}
+          {page === "jobs" && <Jobs />}
         </div>
         <footer>
           PRONTARR <span>Uma cópia para agora. Uma melhor para depois.</span>
