@@ -1,0 +1,24 @@
+.{
+    .name = .prontarr,
+    .version = "0.1.0",
+    .fingerprint = 0x636f66e0875e4043, // Changing this has security and trust implications.
+    .minimum_zig_version = "0.17.1",
+    .dependencies = .{
+        .httpz = .{
+            .url = "git+https://github.com/karlseguin/http.zig?ref=master#1bb71ff128a044b1645df91046473c38abbf965c",
+            .hash = "httpz-0.0.0-PNVzrFNMCQBySpfunggKlQQoD_FvF3yADlqg3xfbdX8p",
+        },
+        .zqlite = .{
+            .url = "git+https://github.com/karlseguin/zqlite.zig?ref=master#865223b734a5113f731ab1eb1d7d81c8ac252913",
+            .hash = "zqlite-0.0.1-RWLaY4Y8nADz2l5aBE-JVyDyM3sZzHjq0agNykuVZKqQ",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "frontend/dist",
+        "README.md",
+        "docs",
+    },
+}

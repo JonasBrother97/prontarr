@@ -1,0 +1,11 @@
+.zig-cache/
+zig-out/
+node_modules/
+frontend/dist/
+data/
+.env
+*.sqlite*
+*.db*
+coverage/
+
+zig-pkg/

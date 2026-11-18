@@ -1,0 +1,9 @@
+{
+  "title": "Example film",
+  "policy": { "max_compact_bytes": 4294967296, "min_seeders": 3, "min_resolution": 720, "max_resolution": 1080 },
+  "snapshot": { "stage": "missing", "imported_episodes": 0, "expected_episodes": 1, "upgrade_import_confirmed": false },
+  "candidates": [
+    { "id": "compact", "title": "Example 1080p", "bytes": 2147483648, "seeders": 120, "resolution": 1080, "original_audio": true, "arr_approved": true, "remux": false },
+    { "id": "upgrade", "title": "Example 2160p HDR", "bytes": 37580963840, "seeders": 80, "resolution": 2160, "original_audio": true, "arr_approved": true, "remux": false }
+  ]
+}
