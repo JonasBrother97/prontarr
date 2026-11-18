@@ -27,7 +27,7 @@ pub const Candidate = struct {
     surround_hint: bool = false,
 };
 pub const Release = struct { candidate: Candidate, guid: []const u8, indexer_id: i64, info_hash: ?[]const u8 = null };
-pub const Report = struct { target: Ref, title: []const u8, profile_name: []const u8, upgrade_allowed: bool, scope: ?Scope = null, files: []const FileState, candidates: []const Candidate, compact_candidate_id: ?[]const u8 = null, upgrade_candidate_id: ?[]const u8 = null, searched: bool, created_at_ms: i64, notes: []const []const u8 = &.{} };
+pub const Report = struct { target: Ref, title: []const u8, profile_name: []const u8, initial_profile_name: ?[]const u8 = null, initial_profile_id: ?i64 = null, final_profile_id: ?i64 = null, native_profile_name: ?[]const u8 = null, upgrade_allowed: bool, scope: ?Scope = null, files: []const FileState, candidates: []const Candidate, compact_candidate_id: ?[]const u8 = null, upgrade_candidate_id: ?[]const u8 = null, searched: bool, created_at_ms: i64, notes: []const []const u8 = &.{} };
 pub const Analysis = struct { report: Report, releases: []const Release };
 pub fn connection(config: T.Config, app: AppKind) !T.Connection {
     return (if (app == .radarr) config.radarr else config.sonarr) orelse error.ConnectionNotConfigured;
@@ -89,8 +89,7 @@ fn findQuality(item: J.Value, id: i64, allowed: bool) ?bool {
     return null;
 }
 pub fn formatScore(profile: J.Value, object: J.Value) ?i64 {
-    if (J.num(object, "customFormatScore")) |score| return score;
-    if (J.field(object, "customFormats") != .array) return null;
+    if (J.field(object, "customFormats") != .array) return J.num(object, "customFormatScore");
     var total: i64 = 0;
     for (J.items(object, "customFormats")) |format| {
         const id = J.num(format, "id") orelse continue;
@@ -116,12 +115,27 @@ pub fn compare(profile: J.Value, current_quality: ?i64, current_score: ?i64, nex
     const better = next_score > score and next_score - score >= (J.num(profile, "minUpgradeFormatScore") orelse 1);
     return .{ .better = better, .reason = if (better) "Mesma qualidade, com ganho de formatos suficiente no perfil." else "Não atinge o ganho mínimo de formatos do perfil." };
 }
+pub fn selectedProfileId(policy: E.Policy, app: AppKind, initial: bool) ?i64 {
+    const pair = if (app == .radarr) policy.radarr_profiles else policy.sonarr_profiles;
+    return if (initial) pair.initial_id else pair.final_id;
+}
+pub fn loadProfile(a: A, config: T.Config, app: AppKind, id: i64) !J.Value {
+    const profile = try get(a, try connection(config, app), try std.fmt.allocPrint(a, "/api/v3/qualityprofile/{d}", .{id}));
+    if (J.field(profile, "items") != .array or J.str(profile, "name") == null) return error.InvalidQualityProfile;
+    return profile;
+}
+fn scoreFor(profile: J.Value, object: J.Value, allow_native: bool) ?i64 {
+    if (!allow_native and J.field(object, "customFormats") != .array) return null;
+    return formatScore(profile, object);
+}
 pub fn media(a: A, config: T.Config, ref: Ref) !J.Value {
     const c = try connection(config, ref.app);
     return get(a, c, try std.fmt.allocPrint(a, "/api/v3/{s}/{d}", .{ if (ref.app == .radarr) "movie" else "series", ref.media_id }));
 }
 pub fn files(a: A, config: T.Config, ref: Ref, profile: J.Value) ![]const FileState {
     const c = try connection(config, ref.app);
+    const assigned = try media(a, config, ref);
+    const allow_native = (J.num(profile, "id") orelse J.num(assigned, "qualityProfileId")) == J.num(assigned, "qualityProfileId");
     var result: std.ArrayList(FileState) = .empty;
     if (ref.app == .radarr) {
         const m = try media(a, config, ref);
@@ -129,7 +143,7 @@ pub fn files(a: A, config: T.Config, ref: Ref, profile: J.Value) ![]const FileSt
         const f = J.field(m, "movieFile");
         const id = J.num(f, "id");
         if (has and (id == null or id.? <= 0)) return error.UnknownFileIdentity;
-        try result.append(a, .{ .episode_id = 0, .has_file = has, .file_id = if (has) id else null, .quality_id = J.num(J.field(J.field(f, "quality"), "quality"), "id"), .format_score = formatScore(profile, f) });
+        try result.append(a, .{ .episode_id = 0, .has_file = has, .file_id = if (has) id else null, .quality_id = J.num(J.field(J.field(f, "quality"), "quality"), "id"), .format_score = scoreFor(profile, f, allow_native) });
     } else {
         if (ref.episode_ids.len == 0) return error.UnknownEpisodeScope;
         for (ref.episode_ids) |id| {
@@ -139,7 +153,7 @@ pub fn files(a: A, config: T.Config, ref: Ref, profile: J.Value) ![]const FileSt
             const fid = J.num(ep, "episodeFileId");
             if (has and (fid == null or fid.? <= 0)) return error.UnknownFileIdentity;
             const f = if (has) try get(a, c, try std.fmt.allocPrint(a, "/api/v3/episodefile/{d}", .{fid.?})) else J.Value.null;
-            try result.append(a, .{ .episode_id = id, .has_file = has, .file_id = if (has) fid else null, .quality_id = J.num(J.field(J.field(f, "quality"), "quality"), "id"), .format_score = formatScore(profile, f) });
+            try result.append(a, .{ .episode_id = id, .has_file = has, .file_id = if (has) fid else null, .quality_id = J.num(J.field(J.field(f, "quality"), "quality"), "id"), .format_score = scoreFor(profile, f, allow_native) });
         }
     }
     return result.items;
@@ -231,7 +245,12 @@ pub fn analyze(a: A, io: std.Io, config: T.Config, reference: Ref, policy: E.Pol
     const c = try connection(config, ref.app);
     const m = try media(a, config, ref);
     const title = J.str(m, "title") orelse return error.InvalidMediaReference;
-    const profile = try get(a, c, try std.fmt.allocPrint(a, "/api/v3/qualityprofile/{d}", .{J.num(m, "qualityProfileId") orelse return error.InvalidQualityProfile}));
+    const assigned_id = J.num(m, "qualityProfileId") orelse return error.InvalidQualityProfile;
+    const native_profile = try loadProfile(a, config, ref.app, assigned_id);
+    const final_id = selectedProfileId(policy, ref.app, false) orelse assigned_id;
+    const initial_id = selectedProfileId(policy, ref.app, true) orelse assigned_id;
+    const profile = if (final_id == assigned_id) native_profile else try loadProfile(a, config, ref.app, final_id);
+    const initial_profile = if (initial_id == final_id) profile else if (initial_id == assigned_id) native_profile else try loadProfile(a, config, ref.app, initial_id);
     var manifest: ?Scope = null;
     if (ref.app == .sonarr and ref.original_hash != null) {
         manifest = try scope(a, config, ref, m);
@@ -256,18 +275,23 @@ pub fn analyze(a: A, io: std.Io, config: T.Config, reference: Ref, policy: E.Pol
                 const resolution = J.num(q, "resolution") orelse 0;
                 const size = J.num(raw, "size") orelse 0;
                 if (size <= 0 or resolution < 0 or resolution > 65535) continue;
-                const score = formatScore(profile, raw) orelse continue;
+                const score = scoreFor(profile, raw, final_id == assigned_id) orelse continue;
+                const initial_score = scoreFor(initial_profile, raw, initial_id == assigned_id);
+                const initial_rank = qualityRank(initial_profile, qid);
+                const final_rank = qualityRank(profile, qid);
+                const initial_ok = initial_rank != null and initial_rank.?.allowed and initial_score != null and initial_score.? >= (J.num(initial_profile, "minFormatScore") orelse 0);
+                const final_ok = final_rank != null and final_rank.?.allowed and score >= (J.num(profile, "minFormatScore") orelse 0);
                 const original = hasLanguage(raw, J.num(J.field(m, "originalLanguage"), "id") orelse 0);
-                const allowed = (J.flag(raw, "approved") orelse false) and !(J.flag(raw, "rejected") orelse true) and !(J.flag(raw, "temporarilyRejected") orelse false) and (J.flag(raw, "downloadAllowed") orelse false) and std.mem.eql(u8, J.str(raw, "protocol") orelse "", "torrent") and original and score >= (J.num(profile, "minFormatScore") orelse 0);
+                const allowed = (J.flag(raw, "approved") orelse false) and !(J.flag(raw, "rejected") orelse true) and !(J.flag(raw, "temporarilyRejected") orelse false) and (J.flag(raw, "downloadAllowed") orelse false) and std.mem.eql(u8, J.str(raw, "protocol") orelse "", "torrent") and original;
                 const disallowed_3d = try hasText(a, release_title, "hsbs") or try hasText(a, release_title, ".3d.") or try hasText(a, release_title, " 3d ");
                 const remux = std.mem.eql(u8, J.str(q, "modifier") orelse "", "remux");
                 var cap = policy.max_compact_bytes;
                 if (ref.app == .sonarr) {
                     const runtime = J.num(m, "runtime") orelse 45;
-                    cap = @intCast(@min(2684354560, @max(644245094, runtime * 45 * 1024 * 1024)));
+                    cap = @min(policy.max_compact_bytes, @as(u64, @intCast(@min(2684354560, @max(644245094, runtime * 45 * 1024 * 1024)))));
                 }
                 const seeds = @max(0, J.num(raw, "seeders") orelse 0);
-                const is_compact = allowed and !disallowed_3d and !remux and resolution >= policy.min_resolution and resolution <= policy.max_resolution and @as(u64, @intCast(size)) <= cap and seeds >= policy.min_seeders and !(J.flag(raw, "fullSeason") orelse false);
+                const is_compact = allowed and initial_ok and !disallowed_3d and !remux and resolution >= policy.min_resolution and resolution <= policy.max_resolution and @as(u64, @intCast(size)) <= cap and seeds >= policy.min_seeders and !(J.flag(raw, "fullSeason") orelse false);
                 var upgrade: ?bool = true;
                 for (current) |file| {
                     if (!file.has_file) {
@@ -279,7 +303,7 @@ pub fn analyze(a: A, io: std.Io, config: T.Config, reference: Ref, policy: E.Pol
                         if (upgrade != false) upgrade = null;
                     } else if (!comparison.better.?) upgrade = false;
                 }
-                if (!allowed or disallowed_3d) upgrade = false;
+                if (!allowed or !final_ok or disallowed_3d) upgrade = false;
                 const native_reason = if (J.items(raw, "rejections").len > 0) "Rejeitado pelo Arr; consulte os detalhes no aplicativo de origem." else if (!original) "Idioma original não confirmado." else if (disallowed_3d) "Versão 3D excluída da primeira cópia." else if (!allowed) "Não foi aprovado pelo perfil nativo." else "Aprovado pelo perfil nativo; disponibilidade é estimada por seeds e tamanho.";
                 const id = try J.hash(a, try std.fmt.allocPrint(a, "{d}:{s}", .{ indexer, guid }));
                 const candidate = Candidate{ .id = id, .title = release_title, .bytes = @intCast(size), .seeds = @intCast(@min(seeds, std.math.maxInt(u32))), .resolution = @intCast(resolution), .quality_id = qid, .quality = J.str(q, "name") orelse "Unknown", .format_score = score, .original_audio = original, .native_approved = allowed and !disallowed_3d, .compact = is_compact, .upgrade = upgrade, .reason = native_reason, .surround_hint = try surround(a, raw, release_title) };
@@ -289,7 +313,7 @@ pub fn analyze(a: A, io: std.Io, config: T.Config, reference: Ref, policy: E.Pol
                 if (is_compact) {
                     if (compact == null or (candidate.surround_hint and !candidates.items[compact.?].surround_hint) or (candidate.surround_hint == candidates.items[compact.?].surround_hint and compactScore(candidate) > compactScore(candidates.items[compact.?]))) compact = idx;
                 }
-                if (allowed and !disallowed_3d and seeds >= policy.min_seeders and upgrade != false) {
+                if (allowed and final_ok and !disallowed_3d and seeds >= policy.min_seeders and upgrade != false) {
                     const rank = qualityRank(profile, qid) orelse continue;
                     if (!rank.allowed) continue;
                     if (best == null) {
@@ -303,5 +327,5 @@ pub fn analyze(a: A, io: std.Io, config: T.Config, reference: Ref, policy: E.Pol
             }
         }
     }
-    return .{ .report = .{ .target = ref, .title = title, .profile_name = J.str(profile, "name") orelse "Unknown", .upgrade_allowed = J.flag(profile, "upgradeAllowed") orelse false, .scope = manifest, .files = current, .candidates = candidates.items, .compact_candidate_id = if (compact) |idx| candidates.items[idx].id else null, .upgrade_candidate_id = if (best) |idx| candidates.items[idx].id else null, .searched = search_sources, .created_at_ms = std.Io.Timestamp.now(io, .real).toMilliseconds() }, .releases = releases.items };
+    return .{ .report = .{ .target = ref, .title = title, .profile_name = J.str(profile, "name") orelse "Unknown", .initial_profile_name = J.str(initial_profile, "name"), .initial_profile_id = initial_id, .final_profile_id = final_id, .native_profile_name = J.str(native_profile, "name"), .upgrade_allowed = J.flag(profile, "upgradeAllowed") orelse false, .scope = manifest, .files = current, .candidates = candidates.items, .compact_candidate_id = if (compact) |idx| candidates.items[idx].id else null, .upgrade_candidate_id = if (best) |idx| candidates.items[idx].id else null, .searched = search_sources, .created_at_ms = std.Io.Timestamp.now(io, .real).toMilliseconds() }, .releases = releases.items };
 }

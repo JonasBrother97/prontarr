@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import "./style.css";
 import { api } from "./api";
+import { ProfilesSettings, type ProfileChoices } from "./Profiles";
 import { Jobs } from "./Jobs";
 import { Live } from "./Live";
 import {
@@ -39,7 +40,7 @@ import {
 
 type Stage =
   "missing" | "compact_downloading" | "watchable" | "upgrading" | "complete";
-type Policy = {
+type Policy = ProfileChoices & {
   max_compact_bytes: number;
   min_seeders: number;
   min_resolution: number;
@@ -317,7 +318,7 @@ function App() {
                   aria-current={page === "policy" ? "page" : undefined}
                   onClick={() => navigate("policy")}
                 >
-                  Perfil de download
+                  Perfis de download
                 </button>
               </div>
             )}
@@ -362,7 +363,7 @@ function App() {
                     live: "Downloads",
                     jobs: "Planos de execução",
                     simulator: "Simulador",
-                    policy: "Política de download",
+                    policy: "Perfis de download",
                   }[page]
                 }
               </strong>
@@ -567,11 +568,11 @@ function PolicyForm({ initial }: { initial: Policy }) {
     <>
       <div className="page-heading">
         <div>
-          <span className="eyebrow">PRIMEIRA CÓPIA</span>
-          <h1>Política de download</h1>
+          <span className="eyebrow">PRIMEIRA CÓPIA E UPGRADE</span>
+          <h1>Perfis de download</h1>
           <p>
-            Valores padrão para novas simulações. O limite é para o torrent
-            inteiro.
+            Perfis e limites padrão para novos planos e simulações. O limite de
+            tamanho se aplica ao torrent inteiro.
           </p>
         </div>
       </div>
@@ -582,6 +583,8 @@ function PolicyForm({ initial }: { initial: Policy }) {
           save.mutate();
         }}
       >
+        <ProfilesSettings value={draft} onChange={update} />
+        <h2>Limites da primeira cópia</h2>
         <div className="form-grid">
           <label>
             Tamanho máximo (GiB)

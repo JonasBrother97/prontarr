@@ -13,6 +13,7 @@ class Upstream(BaseHTTPRequestHandler):
     healthy = True
     conflict = False
     active_movie = False
+    reject_compact = False
     def log_message(self,*args): pass
     def reply(self,data,status=200):
         body=json.dumps(data).encode(); self.send_response(status); self.send_header('Content-Type','application/json'); self.send_header('Content-Length',str(len(body))); self.end_headers();self.wfile.write(body)
@@ -29,9 +30,13 @@ class Upstream(BaseHTTPRequestHandler):
             return self.reply({'parsedEpisodeInfo':{'seriesTitle':'Fixture Series','seasonNumber':1,'episodeNumbers':[number]}})
         if p=='/health':return self.reply({'healthy':self.healthy})
         if p=='/api/v3/movie/48':return self.reply({'id':48,'title':'Fixture','qualityProfileId':1,'originalLanguage':{'id':1},'hasFile':self.file is not None,'movieFile':self.file or {}})
-        if p=='/api/v3/qualityprofile/1':return self.reply({'name':'Fixture profile','upgradeAllowed':True,'cutoff':19,'cutoffFormatScore':1000,'minFormatScore':0,'minUpgradeFormatScore':1,'items':[{'quality':{'id':7},'allowed':True},{'quality':{'id':19},'allowed':True}]})
+        profiles=[{'id':id,'name':name,'upgradeAllowed':True,'cutoff':19,'cutoffFormatScore':1000,'minFormatScore':0,'minUpgradeFormatScore':1,'formatItems':[{'format':1,'score':20},{'format':2,'score':score}],'items':[{'quality':{'id':7,'name':'Bluray-1080p'},'allowed':id!=3},{'quality':{'id':19,'name':'Bluray-2160p'},'allowed':id!=2}]} for id,name,score in [(1,'Fixture profile',1000),(2,'Compact 1080p',1000),(3,'Final 4K',2000)]]
+        if p=='/api/v3/qualityprofile':return self.reply(profiles)
+        if p.startswith('/api/v3/qualityprofile/'):
+            profile=next((x for x in profiles if x['id']==int(p.rsplit('/',1)[1])),None)
+            return self.reply(profile,200 if profile else 404)
         if p=='/api/v3/release':
-            return self.reply([{'guid':g,'title':g,'indexerId':1,'size':size,'seeders':30,'quality':{'quality':{'id':qid,'name':name,'resolution':res}},'languages':[{'id':1}],'customFormatScore':score,'approved':True,'rejected':False,'temporarilyRejected':False,'downloadAllowed':True,'protocol':'torrent','infoHash':h*40} for g,size,qid,name,res,score,h in [('compact',2*1024**3,7,'Bluray-1080p',1080,20,'a'),('upgrade',15*1024**3,19,'Bluray-2160p',2160,1000,'b')]])
+            return self.reply([{'guid':g,'title':g,'indexerId':1,'size':size,'seeders':30,'quality':{'quality':{'id':qid,'name':name,'resolution':res}},'languages':[{'id':1}],'customFormatScore':score,'customFormats':[{'id':1 if qid==7 else 2}],'approved':not (self.reject_compact and g=='compact'),'rejected':self.reject_compact and g=='compact','temporarilyRejected':False,'downloadAllowed':True,'protocol':'torrent','infoHash':h*40} for g,size,qid,name,res,score,h in [('compact',2*1024**3,7,'Bluray-1080p',1080,20,'a'),('upgrade',15*1024**3,19,'Bluray-2160p',2160,1000,'b')]])
         if p=='/api/v3/queue':return self.reply({'totalRecords':8,'records':([{'movieId':48,'downloadId':'d'*40}] if self.active_movie else []) + [{'seriesId':9,'episodeId':449+n,'downloadId':'c'*40} for n in range(1,9)]})
         return self.reply({},404)
     def do_POST(self):
@@ -45,7 +50,7 @@ class Upstream(BaseHTTPRequestHandler):
 
 class ControllerContract(unittest.TestCase):
     def setUp(self):
-        Upstream.file=None;Upstream.grabs=[];Upstream.owner=False;Upstream.healthy=True;Upstream.conflict=False;Upstream.active_movie=False
+        Upstream.file=None;Upstream.grabs=[];Upstream.owner=False;Upstream.healthy=True;Upstream.conflict=False;Upstream.active_movie=False;Upstream.reject_compact=False
         self.server=ThreadingHTTPServer(('127.0.0.1',0),Upstream)
         self.thread=threading.Thread(target=self.server.serve_forever,daemon=True);self.thread.start()
         self.temp=tempfile.TemporaryDirectory(prefix='prontarr-controller-');self.folder=Path(self.temp.name)
@@ -113,6 +118,46 @@ class ControllerContract(unittest.TestCase):
     def test_ownership_conflict_prevents_grab(self):
         id=self.plan();Upstream.conflict=True;request(f'/api/jobs/{id}/start',{})
         self.wait_stage(id,'review');self.assertEqual(Upstream.grabs,[])
+    def test_profile_choices_filter_each_stage_and_reanalysis_adopts_changes(self):
+        status,data,_=request('/api/profiles')
+        self.assertEqual(status,200)
+        self.assertEqual([p['name'] for p in data['services'][0]['items']],['Fixture profile','Compact 1080p','Final 4K'])
+        policy=request('/api/policy')[1]
+        policy['radarr_profiles']={'initial_id':2,'final_id':3}
+        self.assertEqual(request('/api/policy',policy,'PUT')[0],200)
+        id=self.plan();report=request(f'/api/jobs/{id}')[1]['report']
+        self.assertEqual(report['initial_profile_name'],'Compact 1080p')
+        self.assertEqual(report['profile_name'],'Final 4K')
+        selected=next(x for x in report['candidates'] if x['id']==report['upgrade_candidate_id'])
+        self.assertEqual(selected['format_score'],2000)
+        policy['radarr_profiles']={'initial_id':3,'final_id':1}
+        self.assertEqual(request('/api/policy',policy,'PUT')[0],200)
+        self.assertEqual(request(f'/api/jobs/{id}')[1]['report']['initial_profile_name'],'Compact 1080p')
+        self.assertEqual(request(f'/api/jobs/{id}/analyze',{})[0],200)
+        report=self.wait_stage(id,'ready')['report']
+        self.assertEqual(report['initial_profile_name'],'Final 4K')
+        self.assertIsNone(report['compact_candidate_id'])
+        self.assertEqual(Upstream.grabs,[])
+        self.stop();self.start()
+        self.assertEqual(request('/api/policy')[1]['radarr_profiles']['initial_id'],3)
+
+    def test_selected_profile_never_overrides_native_rejection(self):
+        policy=request('/api/policy')[1]
+        policy['radarr_profiles']={'initial_id':2,'final_id':3}
+        self.assertEqual(request('/api/policy',policy,'PUT')[0],200)
+        Upstream.reject_compact=True
+        id=self.plan();report=request(f'/api/jobs/{id}')[1]['report']
+        self.assertIsNone(report['compact_candidate_id'])
+        self.assertEqual(request(f'/api/jobs/{id}/start',{})[0],409)
+        self.assertEqual(Upstream.grabs,[])
+
+    def test_missing_and_invalid_profile_ids_are_not_saved(self):
+        policy=request('/api/policy')[1]
+        for id in (-1,999):
+            policy['radarr_profiles']={'initial_id':id,'final_id':None}
+            self.assertEqual(request('/api/policy',policy,'PUT')[0],400)
+        self.assertIsNone(request('/api/policy')[1]['radarr_profiles']['initial_id'])
+
     def test_existing_native_download_prevents_duplicate_acquisition(self):
         id=self.plan();Upstream.active_movie=True
         request(f'/api/jobs/{id}/start',{})

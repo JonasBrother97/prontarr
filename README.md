@@ -12,6 +12,7 @@ This is an experimental pilot, not a general replacement for every existing cont
 
 Implemented:
 
+- Selectable initial/final profiles per Arr, discovered from native APIs and snapshotted per plan.
 - Persisted execution plans, source comparison, event journal, cancellation and explicit reanalysis.
 - Idempotent release requests across restarts and exclusive ownership per media.
 - Native quality groups, custom-format improvements, upgrade cutoffs and file-identity checks.

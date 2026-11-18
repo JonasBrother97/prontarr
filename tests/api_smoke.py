@@ -81,7 +81,9 @@ class ApiTests(unittest.TestCase):
         cls.temp.cleanup()
 
     def example(self):
-        return json.loads((ROOT / 'docs/example-input.json').read_text())
+        value = json.loads((ROOT / 'docs/example-input.json').read_text())
+        for app in ('radarr_profiles','sonarr_profiles'):value['policy'].setdefault(app, {'initial_id':None,'final_id':None})
+        return value
 
     def test_health_explicitly_disables_live_actions(self):
         status, body, headers = request('/api/health')
@@ -164,7 +166,10 @@ class ApiTests(unittest.TestCase):
 
     def test_restart_preserves_policy_and_plan(self):
         policy = {'max_compact_bytes': 2 * 1024**3, 'min_seeders': 7, 'min_resolution': 720, 'max_resolution': 1080}
-        self.assertEqual(request('/api/policy', policy, 'PUT')[0], 200)
+        status, normalized, _ = request('/api/policy', policy, 'PUT')
+        self.assertEqual(status, 200)
+        for key,value in policy.items():self.assertEqual(normalized[key],value)
+        policy = normalized
         data = self.example()
         data['title'] = 'Persistence proof'
         status, saved, _ = request('/api/plans', data)

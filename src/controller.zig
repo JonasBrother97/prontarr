@@ -102,6 +102,14 @@ pub const Runtime = struct {
     pub fn reanalyze(self: *Runtime, a: A, id: i64) !void {
         var state = try self.load(a, id);
         if (state.token != null or state.original_stopped or (state.stage != .ready and state.stage != .review and state.stage != .cancelled and state.stage != .completed)) return error.JobBusy;
+        const db = try self.pool.acquire(self.io);
+        {
+            defer self.pool.release(self.io, db);
+            if (try db.row("SELECT policy FROM settings WHERE id=1", .{})) |row| {
+                defer row.deinit();
+                state.policy = try std.json.parseFromSliceLeaky(E.Policy, a, row.text(0), .{});
+            } else state.policy = .{};
+        }
         state.stage = .queued;
         state.analysis = null;
         state.error_code = null;
@@ -109,7 +117,7 @@ pub const Runtime = struct {
         state.upgrade_hash = null;
         state.baseline = &.{};
         state.generation += 1;
-        try self.save(a, id, &state, "analysis_requested", "Nova análise solicitada explicitamente.");
+        try self.save(a, id, &state, "analysis_requested", "Nova análise solicitada com os perfis e limites padrão atuais.");
     }
     pub fn allowed(self: *const Runtime, ref: P.Ref) bool {
         if (!self.config.execution.enabled) return false;
@@ -238,7 +246,7 @@ pub const Runtime = struct {
     }
     fn nativeProfile(self: *Runtime, a: A, state: State) !J.Value {
         const m = try P.media(a, self.config, state.target);
-        return P.get(a, try P.connection(self.config, state.target.app), try std.fmt.allocPrint(a, "/api/v3/qualityprofile/{d}", .{J.num(m, "qualityProfileId") orelse return error.InvalidQualityProfile}));
+        return P.loadProfile(a, self.config, state.target.app, P.selectedProfileId(state.policy, state.target.app, false) orelse J.num(m, "qualityProfileId") orelse return error.InvalidQualityProfile);
     }
     fn allFiles(current: []const P.FileState) bool {
         if (current.len == 0) return false;

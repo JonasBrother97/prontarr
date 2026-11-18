@@ -27,6 +27,8 @@ type Candidate = {
 type Report = {
   title: string;
   profile_name: string;
+  initial_profile_name?: string | null;
+  native_profile_name?: string | null;
   compact_candidate_id: string | null;
   upgrade_candidate_id: string | null;
   candidates: Candidate[];
@@ -280,7 +282,7 @@ export function Jobs() {
                 action.mutate({ id: data.job.id, action: "analyze" })
               }
             >
-              Reanalisar
+              Reanalisar com padrões atuais
             </button>
             <button
               className="secondary"
@@ -308,6 +310,21 @@ export function Jobs() {
               selecionado(s); {report.scope.absent_queue_episode_ids.length}{" "}
               item(ns) da fila ausente(s) do torrent.{" "}
               {report.scope.warnings.join(" ")}
+            </p>
+          )}
+          {report && (
+            <p>
+              <strong>Perfil inicial:</strong>{" "}
+              {report.initial_profile_name ??
+                "Perfil do título + limites compactos"}
+              <br />
+              <strong>Perfil final:</strong> {report.profile_name}
+              <br />
+              <small>
+                Proteções do Arr:{" "}
+                {report.native_profile_name ?? report.profile_name}. Perfis
+                registrados na análise deste plano.
+              </small>
             </p>
           )}
           <h3>Fontes escolhidas</h3>

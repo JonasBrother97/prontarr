@@ -1,3 +1,10 @@
+## Profile selection
+
+- Independent initial/final native profile choices for movies and series, with quality summaries.
+- Native profile discovery and validation, persisted defaults and explicit reanalysis using current defaults.
+- Per-profile custom-format scoring while retaining native approval and original-language protections.
+- Saved profiles shown in execution details; existing in-flight plans retain their policy snapshots.
+
 ## 0.4.0 — Controlled execution pilot
 
 - Native release analysis, quality hierarchy and custom-format comparisons.

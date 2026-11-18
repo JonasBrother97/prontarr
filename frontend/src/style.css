@@ -1590,3 +1590,39 @@ progress::-moz-progress-bar {
 .jobs-page button:disabled {
   cursor: not-allowed;
 }
+.profile-settings {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 28px;
+}
+.profile-settings p {
+  line-height: 1.5;
+}
+.profile-settings > button {
+  justify-self: start;
+}
+.profile-service {
+  border: 1px solid #ffffff1f;
+  padding: 16px;
+  border-radius: 4px;
+  min-width: 0;
+}
+.profile-service legend {
+  font-weight: 600;
+  padding: 0 8px;
+}
+.profile-service .form-grid {
+  margin: 0;
+}
+.profile-service label {
+  min-width: 0;
+}
+.profile-service select {
+  width: 100%;
+}
+.profile-service small {
+  color: #abb3bf;
+  font-weight: 400;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}

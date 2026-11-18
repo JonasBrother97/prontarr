@@ -44,3 +44,15 @@ Only one process may operate a database, enforced by an OS file lock. Database, 
 ## API
 
 `GET/POST /api/jobs`, `GET /api/jobs/:id`, `POST /api/jobs/:id/start`, `/cancel`, `/analyze`; `GET /api/library` and `/api/library/sonarr/:id/episodes`. Reports expose sanitized candidates, not indexer GUIDs, download URLs, API credentials or ownership tokens.
+
+## Initial and final profiles
+
+In **Configurações → Perfis de download**, choose an initial and final profile separately for Radarr movies and Sonarr series. `GET /api/profiles` discovers actual native profile IDs, names, allowed qualities, minimum format score and upgrade permission; errors are isolated per application. `PUT /api/policy` validates selected IDs against the relevant service before saving.
+
+`radarr_profiles` and `sonarr_profiles` each accept `{"initial_id": 4, "final_id": 1}`. Null means use the profile associated with each title. IDs are local to each Arr instance, not interchangeable.
+
+The initial profile filters allowed qualities and custom-format minimums in addition to compact size, resolution and seed limits. The final profile determines quality ranking, format scores and upgrade cutoffs. Scores are recalculated from matched custom-format IDs using the selected profile's weights; an alternate profile cannot use a score calculated for a different profile when format metadata is missing.
+
+Native approval, original audio and the existing rejection/blocklist protections remain mandatory. Selecting a different profile does not edit the title's native `qualityProfileId` or bypass native rejections. A stricter native title profile may therefore prevent a source that the initial profile would otherwise allow.
+
+Jobs retain their policy snapshot. Saving defaults affects new jobs; **Reanalisar com padrões atuais** explicitly adopts current settings for a stopped/ready plan. Running plans must be cancelled before reanalysis. Existing simulations and jobs without selection fields remain compatible and use the title's profile.

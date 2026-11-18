@@ -2,7 +2,10 @@ const std = @import("std");
 
 pub const Stage = enum { missing, compact_downloading, watchable, upgrading, complete };
 pub const Action = enum { wait, download_compact, search_upgrade, keep_available, complete };
+pub const ProfilePair = struct { initial_id: ?i64 = null, final_id: ?i64 = null };
 pub const Policy = struct {
+    radarr_profiles: ProfilePair = .{},
+    sonarr_profiles: ProfilePair = .{},
     max_compact_bytes: u64 = 4 * 1024 * 1024 * 1024,
     min_seeders: u32 = 3,
     min_resolution: u16 = 720,
@@ -43,6 +46,9 @@ pub fn validate(input: Input) !void {
     if (std.mem.trim(u8, input.title, " \t\r\n").len == 0 or input.title.len > 300) return error.InvalidTitle;
     if (input.snapshot.expected_episodes == 0 or input.snapshot.expected_episodes > 1000) return error.InvalidEpisodeCount;
     if (input.snapshot.imported_episodes > input.snapshot.expected_episodes) return error.InvalidEpisodeCount;
+    for ([_]ProfilePair{ input.policy.radarr_profiles, input.policy.sonarr_profiles }) |pair| {
+        if ((pair.initial_id != null and pair.initial_id.? <= 0) or (pair.final_id != null and pair.final_id.? <= 0)) return error.InvalidProfileId;
+    }
     if (input.policy.max_compact_bytes == 0 or input.policy.min_seeders == 0) return error.InvalidPolicy;
     if (input.policy.min_resolution > input.policy.max_resolution or input.policy.max_resolution > 1080) return error.InvalidPolicy;
     if (input.policy.min_resolution != 720 and input.policy.min_resolution != 1080) return error.InvalidPolicy;

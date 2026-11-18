@@ -101,6 +101,7 @@ pub fn main(init: std.process.Init) !void {
     router.get("/app.js", js, .{});
     router.get("/app.css", css, .{});
     router.get("/api/health", health, .{});
+    router.get("/api/profiles", profiles, .{});
     router.get("/api/policy", getPolicy, .{});
     router.put("/api/policy", putPolicy, .{});
     router.post("/api/simulate", simulate, .{});
@@ -160,6 +161,37 @@ fn observeLive(app: *App, _: *httpz.Request, res: *httpz.Response) !void {
     const result = try observe.collect(res.arena, app.io, app.connections, policy);
     try res.json(result, .{});
 }
+fn profiles(app: *App, _: *httpz.Request, res: *httpz.Response) !void {
+    const Item = struct { id: i64, name: []const u8, qualities: []const []const u8, min_format_score: i64, upgrade_allowed: bool };
+    const Service = struct { app: planner.AppKind, items: []const Item, error_code: ?[]const u8 = null };
+    var services: std.ArrayList(Service) = .empty;
+    for ([_]planner.AppKind{ .radarr, .sonarr }) |kind| {
+        const c = planner.connection(app.connections, kind) catch {
+            try services.append(res.arena, .{ .app = kind, .items = &.{}, .error_code = "ConnectionNotConfigured" });
+            continue;
+        };
+        const raw = planner.get(res.arena, c, "/api/v3/qualityprofile") catch |err| {
+            try services.append(res.arena, .{ .app = kind, .items = &.{}, .error_code = @errorName(err) });
+            continue;
+        };
+        var list: std.ArrayList(Item) = .empty;
+        for (J.array(raw)) |profile| {
+            var qualities: std.ArrayList([]const u8) = .empty;
+            try profileQualities(res.arena, J.items(profile, "items"), true, &qualities);
+            try list.append(res.arena, .{ .id = J.num(profile, "id") orelse continue, .name = J.str(profile, "name") orelse continue, .qualities = qualities.items, .min_format_score = J.num(profile, "minFormatScore") orelse 0, .upgrade_allowed = J.flag(profile, "upgradeAllowed") orelse false });
+        }
+        try services.append(res.arena, .{ .app = kind, .items = list.items });
+    }
+    try res.json(.{ .services = services.items }, .{});
+}
+fn profileQualities(a: std.mem.Allocator, items: []const J.Value, parent: bool, out: *std.ArrayList([]const u8)) !void {
+    for (items) |item| {
+        const allowed = parent and (J.flag(item, "allowed") orelse false);
+        if (!allowed) continue;
+        if (J.str(J.field(item, "quality"), "name")) |name| try out.append(a, name);
+        try profileQualities(a, J.items(item, "items"), allowed, out);
+    }
+}
 fn getPolicy(app: *App, _: *httpz.Request, res: *httpz.Response) !void {
     const conn = try app.pool.acquire(app.io);
     defer app.pool.release(app.io, conn);
@@ -171,7 +203,14 @@ fn getPolicy(app: *App, _: *httpz.Request, res: *httpz.Response) !void {
 }
 fn putPolicy(app: *App, req: *httpz.Request, res: *httpz.Response) !void {
     const policy = (req.json(engine.Policy) catch return failure(res, 400, "Política inválida.")) orelse return failure(res, 400, "Política ausente.");
-    engine.validate(.{ .title = "policy", .policy = policy }) catch return failure(res, 400, "Limites inválidos: seeds e tamanho devem ser positivos; resolução máxima é 1080p.");
+    engine.validate(.{ .title = "policy", .policy = policy }) catch return failure(res, 400, "Configuração inválida: IDs de perfil, seeds e tamanho devem ser positivos; resolução máxima da primeira cópia é 1080p.");
+    for ([_]planner.AppKind{ .radarr, .sonarr }) |kind| {
+        for ([_]bool{ true, false }) |initial| {
+            if (planner.selectedProfileId(policy, kind, initial)) |id| {
+                _ = planner.loadProfile(res.arena, app.connections, kind, id) catch return failure(res, 400, "Perfil não encontrado ou Arr indisponível. Atualize a lista de perfis.");
+            }
+        }
+    }
     const json = try std.json.Stringify.valueAlloc(res.arena, policy, .{});
     const conn = try app.pool.acquire(app.io);
     defer app.pool.release(app.io, conn);
