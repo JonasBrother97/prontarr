@@ -1,0 +1,23 @@
+rules:
+  - id: no-dynamic-javascript
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Avoid dynamic code execution with eval or Function.
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: new Function(...)
+  - id: no-react-raw-html
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: Render text or use an explicitly reviewed HTML sanitization boundary.
+    pattern: <$TAG ... dangerouslySetInnerHTML={$VALUE} ... />
+  - id: no-python-shell
+    languages: [python]
+    severity: ERROR
+    message: Pass a fixed executable and argument list instead of shell=True.
+    pattern: subprocess.$METHOD(..., shell=True, ...)
+  - id: no-unverified-python-tls
+    languages: [python]
+    severity: ERROR
+    message: Certificate verification must remain enabled.
+    pattern: requests.$METHOD(..., verify=False, ...)

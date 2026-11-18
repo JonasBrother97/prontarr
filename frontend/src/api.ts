@@ -1,4 +1,4 @@
-import { t, locale } from "./i18n.ts";
+import { t } from "./i18n.ts";
 export class ApiError extends Error {
   readonly kind: "network" | "timeout" | "http" | "invalid_response";
   readonly status?: number;

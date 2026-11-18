@@ -11,6 +11,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 jobs:
+  security:
+    uses: ./.github/workflows/security.yml
+    secrets: inherit
   test:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
@@ -34,7 +37,7 @@ jobs:
         run: |
           docker run --detach --name prontarr-smoke --publish 127.0.0.1:5882:5882 prontarr:ci
           trap 'docker logs prontarr-smoke; docker rm --force prontarr-smoke' EXIT
-          for attempt in $(seq 1 30); do
+          for _attempt in $(seq 1 30); do
             if curl --fail --silent http://127.0.0.1:5882/api/health > /tmp/prontarr-health.json; then
               python3 -c 'import json; h=json.load(open("/tmp/prontarr-health.json")); assert h["status"] == "ok" and h["live_actions_enabled"] is False'
               test "$(docker exec prontarr-smoke id -u)" = "10001"
@@ -43,9 +46,48 @@ jobs:
             sleep 1
           done
           exit 1
+      - name: Generate runtime SBOM with Syft
+        uses: anchore/sbom-action@73fc65f9f613b4bb1305b6957eddd1217aa991ff
+        with:
+          image: prontarr:ci
+          syft-version: v1.57.2
+          format: spdx-json
+          output-file: runtime.spdx.json
+          upload-release-assets: false
+      - name: Scan runtime SBOM with Grype
+        if: ${{ !cancelled() }}
+        uses: anchore/scan-action@aba84ded01d96bc7ffd9ede169adb6b27e8bc9fb
+        with:
+          sbom: runtime.spdx.json
+          grype-version: v0.122.1
+          severity-cutoff: high
+          only-fixed: true
+          output-format: json
+          output-file: grype.json
+      - name: Scan runtime with Trivy
+        if: ${{ !cancelled() }}
+        uses: aquasecurity/trivy-action@38b337fff0a2f984d5be173c99e3f633438167ec
+        with:
+          image-ref: prontarr:ci
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          format: json
+          output: trivy.json
+      - name: Retain vulnerability reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: runtime-security
+          path: |
+            runtime.spdx.json
+            grype.json
+            trivy.json
+          retention-days: 14
   publish:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && github.repository_owner == 'JonasBrother97'
-    needs: test
+    needs: [test, security]
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     environment: dockerhub
