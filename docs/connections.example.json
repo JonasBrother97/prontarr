@@ -1,0 +1,5 @@
+{
+  "radarr": { "url": "http://127.0.0.1:7878", "api_key": "replace-with-your-radarr-api-key" },
+  "sonarr": { "url": "http://127.0.0.1:8989", "api_key": "replace-with-your-sonarr-api-key" },
+  "qbittorrent": { "url": "http://127.0.0.1:8080" }
+}

@@ -7,6 +7,7 @@ Research date: **2026-11-18**. Versions were checked against upstream repositori
 | Zig | 0.17.1 | Current stable; also installed locally |
 | http.zig / httpz | commit `1bb71ff128a044b1645df91046473c38abbf965c` | Focused native Zig HTTP/1.1 server; upstream targets Zig 0.17 |
 | zqlite.zig | commit `865223b734a5113f731ab1eb1d7d81c8ac252913` | Small SQLite wrapper, bundled SQLite 3.53.0; compiled and exercised on 0.17.1 despite README mentioning 0.16 |
+| libcurl | 8.23.0 (system, tested) | Bounded upstream GETs, connect/transfer deadlines and TLS verification |
 | React / React DOM | 19.3.1 | Component UI; no SSR needed |
 | TypeScript | 7.0.2 | Strict frontend type checking |
 | Vite | 8.3.8 | Static frontend build, embedded into Zig executable |
@@ -22,6 +23,7 @@ Research date: **2026-11-18**. Versions were checked against upstream repositori
 - Zig stable releases: https://ziglang.org/download/
 - HTTP server compatibility and API: https://github.com/karlseguin/http.zig
 - SQLite wrapper and bundled SQLite version: https://github.com/karlseguin/zqlite.zig
+- libcurl: https://curl.se/libcurl/
 - React: https://react.dev/blog
 - Vite releases: https://vite.dev/releases
 - TypeScript: https://www.typescriptlang.org/

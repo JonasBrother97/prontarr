@@ -9,3 +9,4 @@ run:
 test:
 	zig build test
 	python3 tests/api_smoke.py
+	python3 tests/observe_contract.py

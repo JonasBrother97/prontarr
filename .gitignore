@@ -9,3 +9,5 @@ data/
 coverage/
 
 zig-pkg/
+__pycache__/
+*.py[cod]

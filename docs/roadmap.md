@@ -8,14 +8,16 @@
 - [x] Unit and HTTP/persistence tests
 - [x] Pinned dependencies and documented tooling advisory
 
-## Milestone 2 — observe real services
+## Milestone 2 — observe real services (first read-only slice implemented)
 
-- [ ] Radarr / Sonarr / qBittorrent adapters, initially read-only
-- [ ] Secret storage outside returned configuration and logs
-- [ ] Connection testing, deadlines, response-size bounds and TLS verification
-- [ ] Real media/episode identity and quality/custom-format normalization
-- [ ] Compare recommended decisions with the existing controller without acting
-- [ ] Contract tests with sanitized fixtures; no private titles/tokens committed
+- [x] Radarr / Sonarr / qBittorrent adapters, initially read-only
+- [x] Secret storage outside returned configuration and logs
+- [x] Connection testing, deadlines, response-size bounds and TLS verification
+- [x] Queue media/episode IDs, observed file IDs, resolution and returned custom-format scores
+- [ ] Verified complete pack membership and relative final-profile/format scoring
+- [x] Display conservative suggestions against real current queue/torrent state without acting
+- [ ] Reconcile advisory state with the legacy controller state machine
+- [x] Contract tests with sanitized fixtures; no private titles/tokens committed
 
 ## Milestone 3 — controlled execution
 

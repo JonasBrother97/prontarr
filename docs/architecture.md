@@ -8,9 +8,9 @@ React UI ── JSON/HTTP ── Zig/httpz API ── SQLite
                      explained decision
 ```
 
-The current executable cannot issue HTTP requests to external services. There are no live-action routes. A simulation's `Decision` is a recommendation; the application persists the request and the server-computed decision together. It does not execute that recommendation.
+The executable can issue bounded, allowlisted adapter GET requests to configured Radarr/Sonarr/qBittorrent services. There are no live-action routes, release searches or arbitrary API proxy endpoints. A simulation's `Decision` is a recommendation; the application persists the request and the server-computed decision together. It does not execute that recommendation.
 
-`src/engine.zig` owns selection and state transitions without network, database or filesystem access. `src/main.zig` owns routing, request validation, bounded input and local persistence. A small SQLite pool serializes connection use; the shared application does not hold mutable per-request state. Query results are copied into request arenas before database statements are released.
+`src/engine.zig` owns selection and state transitions without network, database or filesystem access. `src/main.zig` owns routing, request validation, bounded input and local persistence. `src/transport.zig` provides a libcurl-backed GET-only client with secret configuration, deadlines, TLS verification and response limits. `src/observe.zig` normalizes service responses and produces conservative read-only advice separately from the simulator engine. A small SQLite pool serializes connection use; the shared application does not hold mutable per-request state. Query results are copied into request arenas before database statements are released.
 
 ## States
 
@@ -29,3 +29,5 @@ The availability score is `log2(seeders + 1) / max(sizeGiB, 0.4)^0.45`. It is a 
 Introduce typed adapters, read-only reconciliation, verified file identities per episode, a durable outbox, idempotent event handling and explicit compensation for partial failures. Webhooks are hints; current Arr/qBittorrent state must be reconciled before any action. An old or repeated webhook must never authorize deletion.
 
 The existing Python controller is a behavioral reference only; its private config, tokens, hostnames and runtime state must not be copied into this repository. The new controller and old controller must never run as simultaneous owners of the same torrents.
+
+The real observation does not claim to have selected or verified a compact release. It does not feed unverified audio or pack metadata into the simulation engine as if they were trusted facts. Per-episode file IDs are observed; complete pack membership, relative upgrade quality and actual legacy-controller state reconciliation remain future work.

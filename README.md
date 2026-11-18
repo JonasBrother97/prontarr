@@ -4,12 +4,14 @@
 
 Prontarr is an experimental two-stage download planner for the Arr ecosystem, built with **Zig + React + TypeScript + SQLite**.
 
-## Current milestone: local simulator
+## Current milestone: read-only integrations + local simulator
 
-This repository is a working vertical slice, **not a production download controller**. It does not connect to Radarr, Sonarr or qBittorrent yet. It does not pause, grab, delete or replace downloads. The existing homelab controller remains independent and untouched.
+This repository is a working vertical slice, **not a production download controller**. It connects to Radarr, Sonarr and qBittorrent in read-only mode, explains advisory recommendations, and simulates two-stage plans. It does not pause, grab, delete or replace downloads. The existing homelab controller remains independent and untouched.
 
 Implemented:
 
+- Read-only service status, real Arr queues, torrent progress/speed/ETA and explained suggestions.
+- Private startup configuration, credential redaction, bounded requests and verified TLS.
 - A real Zig HTTP API, serving an embedded React application from one executable.
 - A deterministic, independently tested decision engine.
 - Compact candidate selection using a seed-count/size availability heuristic.
@@ -23,7 +25,7 @@ Reported seeds **do not guarantee download speed**. The simulator's audio and ap
 
 ## Run locally
 
-Requirements: **Zig 0.17.1**, **Node.js 22.12+** (tested on 26.13.0), npm, a C toolchain supported by Zig. SQLite is compiled from the dependency's bundled amalgamation; no database service is needed.
+Requirements: **Zig 0.17.1**, **Node.js 22.12+** (tested on 26.13.0), npm, pkg-config, libcurl development headers/library (tested with 8.23.0), and a C toolchain supported by Zig. SQLite is compiled from the dependency's bundled amalgamation; no database service is needed.
 
 ```sh
 npm ci --prefix frontend
@@ -32,7 +34,7 @@ zig build
 ./zig-out/bin/prontarr
 ```
 
-Open **http://127.0.0.1:5882**. The executable embeds the built HTML, JS and CSS; Node is not needed at runtime.
+Open **http://127.0.0.1:5882**. The executable embeds the built HTML, JS and CSS; Node is not needed at runtime; the executable dynamically links libcurl.
 
 Default database: `prontarr.sqlite` in the process working directory. To choose another path (parent directory must already exist):
 
@@ -42,6 +44,8 @@ PRONTARR_DB=/absolute/private/path/prontarr.sqlite ./zig-out/bin/prontarr
 
 Use a private directory and `umask 077` when storing personal titles. No credentials belong in this repository. SQLite files, local dependency caches, build output and `.env` are excluded from Git.
 
+For actual service observation, follow [connection setup](docs/connections.md). No connection configuration is committed or enabled by default.
+
 For frontend development, run `npm run dev --prefix frontend` while the backend is running. Vite proxies `/api` to the loopback backend. After frontend changes, rebuild both frontend and executable for the embedded version to change.
 
 ## Verify
@@ -49,20 +53,23 @@ For frontend development, run `npm run dev --prefix frontend` while the backend 
 ```sh
 zig build test
 python3 tests/api_smoke.py
+python3 tests/observe_contract.py
 ```
 
-The integration test starts its own executable on port 5882 with a temporary database, checks validation/security boundaries, saves data, restarts the process and checks persistence. Stop a manual Prontarr instance first. It never connects to your homelab.
+The integration test starts its own executable on port 5882 with a temporary database, checks validation/security boundaries, saves data, restarts the process and checks persistence. Stop a manual Prontarr instance first. The contract suite uses only isolated local mock upstreams, including a temporary self-signed TLS endpoint. Neither suite connects to your homelab.
 
 ## API
 
-All write endpoints require `Content-Type: application/json`. They only write local simulation data.
+POST and PUT endpoints require `Content-Type: application/json`. Settings and plans only write local data; observation only performs upstream GET requests.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| GET | `/api/health` | Version and explicit simulation status |
+| GET | `/api/health` | Version, observation capability and disabled live-action status |
 | GET / PUT | `/api/policy` | Read or save simulation defaults |
 | POST | `/api/simulate` | Return a decision, without saving or executing it |
 | GET / POST | `/api/plans` | Latest 100 saved simulations / save a simulation |
+| GET | `/api/connections` | Redacted configured flags; no upstream requests |
+| POST | `/api/observe` | Real read-only queue/torrent observation |
 
 See [example request](docs/example-input.json), [architecture](docs/architecture.md), [dependency research](docs/dependencies.md) and [roadmap](docs/roadmap.md).
 

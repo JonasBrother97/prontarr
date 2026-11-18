@@ -2,10 +2,14 @@ const std = @import("std");
 const httpz = @import("httpz");
 const zqlite = @import("zqlite");
 const engine = @import("engine.zig");
+const transport = @import("transport.zig");
+const observe = @import("observe.zig");
 
 const App = struct {
     io: std.Io,
     pool: *zqlite.Pool,
+    connections: transport.Config,
+    observation_lock: std.Io.Mutex = .init,
 
     pub fn dispatch(self: *App, action: httpz.Action(*App), req: *httpz.Request, res: *httpz.Response) !void {
         res.header("Cache-Control", "no-store");
@@ -58,11 +62,14 @@ fn configure(conn: zqlite.Conn, _: ?*anyopaque) !void {
 }
 
 pub fn main(init: std.process.Init) !void {
+    try transport.init();
+    defer transport.deinit();
+    const connections = try transport.load(init);
     const path = init.environ_map.get("PRONTARR_DB") orelse "prontarr.sqlite";
     const path_z = try init.arena.allocator().dupeSentinel(u8, path, 0);
     var pool = try zqlite.Pool.init(init.gpa, .{ .path = path_z, .size = 2, .on_first_connection = migrate, .on_connection = configure });
     defer pool.deinit();
-    var app = App{ .io = init.io, .pool = pool };
+    var app = App{ .io = init.io, .pool = pool, .connections = connections };
     var server = try httpz.Server(*App).init(init.io, init.gpa, .{
         .address = .localhost(5882),
         .request = .{ .max_body_size = 1024 * 1024 },
@@ -79,7 +86,9 @@ pub fn main(init: std.process.Init) !void {
     router.post("/api/simulate", simulate, .{});
     router.get("/api/plans", plans, .{});
     router.post("/api/plans", savePlan, .{});
-    std.log.info("Prontarr 0.1.0 — http://127.0.0.1:5882 — simulation only", .{});
+    router.get("/api/connections", connectionInfo, .{});
+    router.post("/api/observe", observeLive, .{});
+    std.log.info("Prontarr 0.2.0 — http://127.0.0.1:5882 — read-only integrations", .{});
     try server.listen();
 }
 
@@ -96,7 +105,31 @@ fn css(_: *App, _: *httpz.Request, res: *httpz.Response) !void {
     res.body = @embedFile("app.css");
 }
 fn health(_: *App, _: *httpz.Request, res: *httpz.Response) !void {
-    try res.json(.{ .status = "ok", .version = "0.1.0", .mode = "simulation", .live_actions_enabled = false }, .{});
+    try res.json(.{ .status = "ok", .version = "0.2.0", .mode = "read_only", .observation_available = true, .live_actions_enabled = false }, .{});
+}
+
+fn connectionInfo(app: *App, _: *httpz.Request, res: *httpz.Response) !void {
+    const Info = struct { name: []const u8, configured: bool, mode: []const u8 = "read_only" };
+    var items: [3]Info = undefined;
+    inline for (.{ "radarr", "sonarr", "qbittorrent" }, 0..) |name, i| {
+        items[i] = .{ .name = name, .configured = @field(app.connections, name) != null };
+    }
+    try res.json(.{ .items = items, .live_actions_enabled = false }, .{});
+}
+fn observeLive(app: *App, _: *httpz.Request, res: *httpz.Response) !void {
+    if (!app.observation_lock.tryLock()) return failure(res, 409, "Já há uma observação em andamento. Aguarde a conclusão.");
+    defer app.observation_lock.unlock(app.io);
+    const conn = try app.pool.acquire(app.io);
+    var policy = engine.Policy{};
+    {
+        defer app.pool.release(app.io, conn);
+        if (try conn.row("SELECT policy FROM settings WHERE id=1", .{})) |row| {
+            defer row.deinit();
+            policy = try std.json.parseFromSliceLeaky(engine.Policy, res.arena, row.text(0), .{});
+        }
+    }
+    const result = try observe.collect(res.arena, app.io, app.connections, policy);
+    try res.json(result, .{});
 }
 fn getPolicy(app: *App, _: *httpz.Request, res: *httpz.Response) !void {
     const conn = try app.pool.acquire(app.io);

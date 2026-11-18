@@ -21,6 +21,8 @@ import {
   Zap,
 } from "lucide-react";
 import "./style.css";
+import { api } from "./api";
+import { Live } from "./Live";
 
 type Stage =
   "missing" | "compact_downloading" | "watchable" | "upgrading" | "complete";
@@ -79,36 +81,14 @@ const actionNames: Record<string, string> = {
   keep_available: "Preservar versão disponível",
   complete: "Concluir plano",
 };
-async function api<T>(
-  path: string,
-  body?: unknown,
-  method = "POST",
-): Promise<T> {
-  const response = await fetch(
-    `/api${path}`,
-    body === undefined
-      ? undefined
-      : {
-          method,
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        },
-  );
-  const data = await response.json();
-  if (!response.ok)
-    throw new Error(
-      data.error_message ?? "Não foi possível concluir a operação.",
-    );
-  return data as T;
-}
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
 });
 
 function App() {
-  const [page, setPage] = useState<"dashboard" | "simulator" | "policy">(
-    "dashboard",
-  );
+  const [page, setPage] = useState<
+    "dashboard" | "simulator" | "policy" | "live"
+  >("dashboard");
   const health = useQuery({
     queryKey: ["health"],
     queryFn: () => api<{ status: string }>("/health"),
@@ -152,6 +132,13 @@ function App() {
             <Settings2 size={18} />
             Política de download
           </button>
+          <button
+            className={page === "live" ? "active" : ""}
+            onClick={() => setPage("live")}
+          >
+            <Layers3 size={18} />
+            Downloads reais
+          </button>
         </nav>
         <div className="sidebar-foot">
           <span className={`dot ${health.isSuccess ? "green" : ""}`} />
@@ -160,7 +147,7 @@ function App() {
             : health.isError
               ? "Backend indisponível"
               : "Conectando…"}
-          <small>Zig · SQLite · v0.1.0</small>
+          <small>Zig · SQLite · v0.2.0</small>
         </div>
       </aside>
       <main>
@@ -168,14 +155,14 @@ function App() {
           <div>Seu conteúdo, no seu tempo</div>
           <span className="mode">
             <ShieldCheck size={14} />
-            Modo simulação
+            Somente leitura
           </span>
         </header>
         <div className="content">
           <div className="notice">
             <FlaskConical size={16} />
             <span>
-              Ambiente local de desenvolvimento. As decisões são simuladas;
+              Observação e simulação. Consulte dados reais e avalie decisões;
               nenhum download ou arquivo da biblioteca é alterado.
             </span>
           </div>
@@ -184,6 +171,7 @@ function App() {
           )}
           {page === "simulator" && <Simulator />}
           {page === "policy" && <PolicyEditor />}
+          {page === "live" && <Live />}
         </div>
         <footer>
           PRONTARR <span>Uma cópia para agora. Uma melhor para depois.</span>

@@ -39,6 +39,7 @@ class ApiTests(unittest.TestCase):
         cls.temp = tempfile.TemporaryDirectory(prefix='prontarr-test-')
         cls.log = tempfile.TemporaryFile()
         cls.env = os.environ | {'PRONTARR_DB': str(Path(cls.temp.name) / 'test.sqlite')}
+        cls.env.pop('PRONTARR_CONNECTIONS', None)
         cls.process = None
         try:
             cls.start()
@@ -86,7 +87,7 @@ class ApiTests(unittest.TestCase):
         status, body, headers = request('/api/health')
         self.assertEqual(status, 200)
         self.assertFalse(body['live_actions_enabled'])
-        self.assertEqual(body['mode'], 'simulation')
+        self.assertEqual(body['mode'], 'read_only')
         self.assertEqual(headers['Cache-Control'], 'no-store')
 
     def test_embedded_frontend_has_correct_content_types(self):
