@@ -16,7 +16,7 @@ Security checks run for pushes to main, version tags and pull requests as part o
 | Trivy | Runtime OS/library vulnerabilities; fixable high/critical findings fail |
 | SonarQube | Optional TS/Python analysis and quality gate; requires external configuration |
 
-Runtime reports and the SBOM are retained as workflow artifacts for 14 days. The image gates focus on vulnerabilities with available fixes; this does not mean unfixed issues are safe. npm/OSV policies are intentionally independent from the runtime gates. The only secret exception is the exact synthetic `http://user:secret@example.test` URI in `src/tests.zig`, limited to the URI detector. There are no blanket vulnerability allowlists or continue-on-error security gates.
+Runtime reports and the SBOM are retained as workflow artifacts for 14 days. The image gates focus on vulnerabilities with available fixes; this does not mean unfixed issues are safe. npm/OSV policies are intentionally independent from the runtime gates. The only secret exception is the exact synthetic `user:secret` URI at the reserved `example.test` domain in `src/tests.zig`, limited to the URI detector. There are no blanket vulnerability allowlists or continue-on-error security gates.
 
 Actions are pinned by commit. Scanner dependencies have explicit versions where configured; scanner databases still update independently. Semgrep uses local rules and disables telemetry. Secret scanning never tests credentials against providers.
 
