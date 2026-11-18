@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   QueryClient,
@@ -11,6 +11,11 @@ import {
   ArrowRight,
   Check,
   ChevronRight,
+  ChevronDown,
+  Menu,
+  X,
+  Activity,
+  Wrench,
   FlaskConical,
   Layers3,
   LayoutDashboard,
@@ -89,19 +94,78 @@ function App() {
   const [page, setPage] = useState<
     "dashboard" | "simulator" | "policy" | "live"
   >("live");
+  const [narrow, setNarrow] = useState(
+    () => window.matchMedia("(max-width: 760px)").matches,
+  );
+  const [collapsed, setCollapsed] = useState(false);
+  const [mobileMenu, setMobileMenu] = useState(false);
+  const [groups, setGroups] = useState({
+    activity: true,
+    tools: true,
+    settings: true,
+  });
+  const menuTrigger = useRef<HTMLButtonElement>(null);
+  function navigate(target: typeof page) {
+    setPage(target);
+    if (mobileMenu) {
+      setMobileMenu(false);
+      menuTrigger.current?.focus();
+    }
+  }
+  function toggleGroup(group: keyof typeof groups) {
+    setGroups((previous) => ({ ...previous, [group]: !previous[group] }));
+  }
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 760px)");
+    const change = (event: MediaQueryListEvent) => {
+      setNarrow(event.matches);
+      if (!event.matches) setMobileMenu(false);
+    };
+    media.addEventListener("change", change);
+    return () => media.removeEventListener("change", change);
+  }, []);
+  useEffect(() => {
+    if (!mobileMenu) return;
+    const close = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMobileMenu(false);
+        menuTrigger.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [mobileMenu]);
   const health = useQuery({
     queryKey: ["health"],
     queryFn: () => api<{ status: string }>("/health"),
   });
   return (
-    <div className="shell">
-      <aside className="sidebar">
+    <div
+      className={`shell ${collapsed ? "sidebar-collapsed" : ""} ${mobileMenu ? "mobile-menu-open" : ""}`}
+    >
+      {mobileMenu && (
+        <button
+          className="sidebar-backdrop"
+          aria-label="Fechar menu"
+          onClick={() => {
+            setMobileMenu(false);
+            menuTrigger.current?.focus();
+          }}
+        />
+      )}
+      <aside
+        className="sidebar"
+        id="sidebar"
+        aria-label="Menu lateral"
+        inert={narrow ? !mobileMenu : collapsed}
+        aria-hidden={narrow ? !mobileMenu : collapsed}
+      >
         <a
           className="brand"
           href="#"
           onClick={(e) => {
             e.preventDefault();
-            setPage("dashboard");
+            navigate("dashboard");
           }}
         >
           <span className="brand-symbol">
@@ -109,36 +173,99 @@ function App() {
           </span>
           prontarr<span className="alpha">alpha</span>
         </a>
-        <div className="nav-label">GERENCIAMENTO</div>
-        <nav aria-label="Navegação principal">
+        <nav className="arr-navigation" aria-label="Navegação principal">
           <button
-            className={page === "dashboard" ? "active" : ""}
-            onClick={() => setPage("dashboard")}
+            className={`nav-main ${page === "dashboard" ? "active" : ""}`}
+            aria-current={page === "dashboard" ? "page" : undefined}
+            onClick={() => navigate("dashboard")}
           >
-            <LayoutDashboard size={18} />
-            Visão geral
+            <LayoutDashboard size={20} />
+            <span>Visão geral</span>
           </button>
-          <button
-            className={page === "live" ? "active" : ""}
-            onClick={() => setPage("live")}
-          >
-            <Layers3 size={18} />
-            Downloads
-          </button>
-          <button
-            className={page === "simulator" ? "active" : ""}
-            onClick={() => setPage("simulator")}
-          >
-            <FlaskConical size={18} />
-            Simulador
-          </button>
-          <button
-            className={page === "policy" ? "active" : ""}
-            onClick={() => setPage("policy")}
-          >
-            <Settings2 size={18} />
-            Política
-          </button>
+          <div className="nav-group">
+            <button
+              className={`nav-main nav-group-toggle ${page === "live" ? "group-selected" : ""}`}
+              aria-expanded={groups.activity}
+              aria-controls="nav-activity"
+              onClick={() => toggleGroup("activity")}
+            >
+              <Activity size={20} />
+              <span>Atividade</span>
+              <ChevronDown
+                size={14}
+                className={
+                  groups.activity ? "group-chevron expanded" : "group-chevron"
+                }
+              />
+            </button>
+            {groups.activity && (
+              <div className="nav-submenu" id="nav-activity">
+                <button
+                  className={page === "live" ? "active" : ""}
+                  aria-current={page === "live" ? "page" : undefined}
+                  onClick={() => navigate("live")}
+                >
+                  Fila de downloads
+                </button>
+              </div>
+            )}
+          </div>
+          <div className="nav-group">
+            <button
+              className={`nav-main nav-group-toggle ${page === "simulator" ? "group-selected" : ""}`}
+              aria-expanded={groups.tools}
+              aria-controls="nav-tools"
+              onClick={() => toggleGroup("tools")}
+            >
+              <Wrench size={20} />
+              <span>Ferramentas</span>
+              <ChevronDown
+                size={14}
+                className={
+                  groups.tools ? "group-chevron expanded" : "group-chevron"
+                }
+              />
+            </button>
+            {groups.tools && (
+              <div className="nav-submenu" id="nav-tools">
+                <button
+                  className={page === "simulator" ? "active" : ""}
+                  aria-current={page === "simulator" ? "page" : undefined}
+                  onClick={() => navigate("simulator")}
+                >
+                  Simulador
+                </button>
+              </div>
+            )}
+          </div>
+          <div className="nav-group">
+            <button
+              className={`nav-main nav-group-toggle ${page === "policy" ? "group-selected" : ""}`}
+              aria-expanded={groups.settings}
+              aria-controls="nav-settings"
+              onClick={() => toggleGroup("settings")}
+            >
+              <Settings2 size={20} />
+              <span>Configurações</span>
+              <ChevronDown
+                size={14}
+                className={
+                  groups.settings ? "group-chevron expanded" : "group-chevron"
+                }
+              />
+            </button>
+            {groups.settings && (
+              <div className="nav-submenu" id="nav-settings">
+                <button
+                  className={page === "policy" ? "active" : ""}
+                  aria-current={page === "policy" ? "page" : undefined}
+                  onClick={() => navigate("policy")}
+                >
+                  Perfil de download
+                </button>
+              </div>
+            )}
+          </div>
         </nav>
         <div className="sidebar-foot">
           <span className={`dot ${health.isSuccess ? "green" : ""}`} />
@@ -152,19 +279,37 @@ function App() {
       </aside>
       <main>
         <header className="topbar">
-          <div className="breadcrumb">
-            <span>Prontarr</span>
-            <ChevronRight size={14} />
-            <strong>
-              {
-                {
-                  dashboard: "Visão geral",
-                  live: "Downloads",
-                  simulator: "Simulador",
-                  policy: "Política de download",
-                }[page]
+          <div className="toolbar-leading">
+            <button
+              ref={menuTrigger}
+              className="sidebar-toggle"
+              aria-label={
+                mobileMenu ? "Fechar menu lateral" : "Alternar menu lateral"
               }
-            </strong>
+              aria-controls="sidebar"
+              aria-expanded={narrow ? mobileMenu : !collapsed}
+              onClick={() => {
+                if (window.matchMedia("(max-width: 760px)").matches)
+                  setMobileMenu(!mobileMenu);
+                else setCollapsed(!collapsed);
+              }}
+            >
+              {mobileMenu ? <X size={20} /> : <Menu size={20} />}
+            </button>
+            <div className="breadcrumb">
+              <span>Prontarr</span>
+              <ChevronRight size={14} />
+              <strong>
+                {
+                  {
+                    dashboard: "Visão geral",
+                    live: "Downloads",
+                    simulator: "Simulador",
+                    policy: "Política de download",
+                  }[page]
+                }
+              </strong>
+            </div>
           </div>
           <span className="mode">
             <ShieldCheck size={14} />

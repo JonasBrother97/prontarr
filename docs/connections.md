@@ -30,7 +30,7 @@ In a local development setup behind network isolation, SSH loopback forwards may
 
 ## UI and API
 
-Open **Downloads**, then **Consultar serviços**. There is no background polling. Each successful observation has a timestamp; refresh manually. Arr records are joined to qBittorrent by case-insensitive download hashes. Library file presence and episode labels (SxxExx) are verified by querying each movie/episode, not inferred from queue status or a completed torrent.
+Open **Atividade → Fila de downloads**, then **Consultar serviços**. There is no background polling. Each successful observation has a timestamp; refresh manually. Arr records are joined to qBittorrent by case-insensitive download hashes. Library file presence and episode labels (SxxExx) are verified by querying each movie/episode, not inferred from queue status or a completed torrent.
 
 - `GET /api/connections`: sanitized configuration metadata, no network calls.
 - `POST /api/observe` with `{}`: read-only upstream snapshot, normalized queue/torrents and advisory explanations.

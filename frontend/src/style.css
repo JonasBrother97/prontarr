@@ -1242,3 +1242,209 @@ progress::-moz-progress-bar {
     text-align: right;
   }
 }
+/* Arr-style navigation: section headers with indented child pages. */
+.sidebar {
+  width: 220px;
+  transition:
+    width 0.16s ease,
+    transform 0.16s ease;
+}
+.sidebar .brand {
+  flex-shrink: 0;
+  min-width: 220px;
+}
+.arr-navigation {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 14px 0;
+  overflow-y: auto;
+}
+.arr-navigation .nav-main {
+  height: 52px;
+  flex-shrink: 0;
+  padding: 0 19px;
+  gap: 15px;
+  font-size: 14px;
+  color: #d1d1d1;
+  border-left: 0;
+  border-bottom: 0;
+}
+.arr-navigation .nav-main svg {
+  flex-shrink: 0;
+  color: #aaa;
+}
+.arr-navigation .nav-main span {
+  flex: 1;
+  text-align: left;
+}
+.arr-navigation .nav-main:hover {
+  background: #363636;
+  color: #fff;
+}
+.arr-navigation .nav-main.active {
+  border-left: 3px solid var(--accent);
+  padding-left: 16px;
+  background: #353535;
+}
+.arr-navigation .nav-main.active svg,
+.arr-navigation .group-selected > svg:first-child {
+  color: var(--accent);
+}
+.arr-navigation .group-chevron {
+  margin-left: auto;
+  transform: rotate(-90deg);
+  color: #929292;
+  transition: transform 0.15s;
+}
+.arr-navigation .group-chevron.expanded {
+  transform: rotate(0deg);
+}
+.nav-group {
+  display: flex;
+  flex-direction: column;
+}
+.nav-submenu {
+  display: flex;
+  flex-direction: column;
+  background: #242424;
+  padding: 3px 0;
+}
+.arr-navigation .nav-submenu button {
+  min-height: 38px;
+  height: auto;
+  padding: 9px 16px 9px 54px;
+  font-size: 12px;
+  border: 0;
+  border-left: 3px solid transparent;
+  border-radius: 0;
+  color: #aaa;
+  text-align: left;
+  justify-content: flex-start;
+}
+.arr-navigation .nav-submenu button:hover {
+  color: #eee;
+  background: #303030;
+}
+.arr-navigation .nav-submenu button.active {
+  color: var(--accent);
+  background: #333;
+  border-left-color: var(--accent);
+}
+.sidebar-foot {
+  min-width: 220px;
+}
+.sidebar-collapsed .sidebar {
+  width: 0;
+  overflow: hidden;
+  border: 0;
+}
+.toolbar-leading {
+  display: flex;
+  align-items: center;
+  gap: 17px;
+  min-width: 0;
+}
+.sidebar-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  background: transparent;
+  color: #bcbcbc;
+  border-radius: 3px;
+  padding: 0;
+}
+.sidebar-toggle:hover {
+  color: #fff;
+  background: #444;
+}
+.sidebar-backdrop {
+  display: none;
+}
+@media (max-width: 760px) {
+  .sidebar,
+  .sidebar-collapsed .sidebar {
+    position: fixed;
+    z-index: 30;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 220px;
+    height: 100dvh;
+    transform: translateX(-100%);
+    border-right: 1px solid #111;
+    overflow: visible;
+    background: #282828;
+  }
+  .mobile-menu-open .sidebar {
+    transform: translateX(0);
+  }
+  .sidebar .brand {
+    height: 56px;
+    padding: 0 18px;
+  }
+  .arr-navigation {
+    display: flex;
+    grid-template-columns: none;
+    border-bottom: 0;
+    margin: 0;
+    gap: 0;
+  }
+  .arr-navigation .nav-main {
+    display: flex;
+    flex-direction: row;
+    justify-content: flex-start;
+    width: 100%;
+    height: 52px;
+    padding: 0 19px;
+    gap: 15px;
+    font-size: 14px;
+    white-space: nowrap;
+  }
+  .arr-navigation .nav-main svg {
+    width: 20px;
+    height: 20px;
+  }
+  .arr-navigation .group-chevron {
+    width: 14px !important;
+    height: 14px !important;
+  }
+  .arr-navigation .nav-submenu button {
+    flex-direction: row;
+    font-size: 12px;
+    padding: 9px 16px 9px 54px;
+    border-bottom: 0;
+  }
+  .sidebar .sidebar-foot {
+    display: block;
+    margin-top: auto;
+  }
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 25;
+    border: 0;
+    padding: 0;
+    background: rgba(0, 0, 0, 0.55);
+  }
+  .toolbar-leading {
+    gap: 9px;
+  }
+  .breadcrumb > span,
+  .breadcrumb > svg {
+    display: none;
+  }
+  .topbar {
+    height: 52px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sidebar,
+  .group-chevron {
+    transition: none !important;
+  }
+}
