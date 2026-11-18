@@ -3,6 +3,9 @@ import contextlib
 import importlib.util
 import io
 import json
+import runpy
+import sys
+from unittest.mock import patch
 from pathlib import Path
 import unittest
 
@@ -33,6 +36,14 @@ class SecretGateTests(unittest.TestCase):
         result, output = self.run_gate(self.entry(raw), 183)
         self.assertEqual(result, 1)
         self.assertNotIn(raw, output)
+
+    def test_cli_consumes_stdin_and_propagates_the_scan_exit_status(self):
+        script=Path(__file__).resolve().parents[1] / 'scripts/trufflehog_gate.py'
+        for status, expected in [(0, 0), (125, 1), (183, 1)]:
+            with patch.object(sys, 'stdin', io.StringIO('')), patch.object(sys, 'argv', [str(script), str(status)]), contextlib.redirect_stdout(io.StringIO()):
+                with self.assertRaises(SystemExit) as result:
+                    runpy.run_path(str(script), run_name='__main__')
+                self.assertEqual(result.exception.code, expected)
 
     def test_scanner_failure_or_missing_records_cannot_pass(self):
         for status, expected in [(0, 0), (125, 1), (183, 1)]:
