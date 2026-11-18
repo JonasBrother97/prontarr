@@ -18,6 +18,8 @@ Security checks run for pushes to main, version tags and pull requests as part o
 
 Python helper and frontend unit coverage reports are passed to SonarQube; test files are classified as tests and excluded from production coverage metrics. UI components and the Zig backend are not represented by the frontend helper coverage percentage.
 
+Runtime builds refresh Debian security updates instead of reusing the runtime package layer. Fixable high/critical findings are summarized on the workflow page.
+
 Runtime reports and the SBOM are retained as workflow artifacts for 14 days. The image gates focus on vulnerabilities with available fixes; this does not mean unfixed issues are safe. npm/OSV policies are intentionally independent from the runtime gates. The only secret exception is the exact synthetic `user:secret` URI at the reserved `example.test` domain in `src/tests.zig`, limited to the URI detector and the test, gate and documentation paths (including historical copies). Gitleaks also permits the exact public SonarQube project identifier in its properties file; analysis tokens are never exempted. There are no blanket vulnerability allowlists or continue-on-error security gates.
 
 Actions are pinned by commit. Scanner dependencies have explicit versions where configured; scanner databases still update independently. Semgrep uses local rules and disables telemetry. Secret scanning never tests credentials against providers.

@@ -9,7 +9,7 @@ COPY frontend/tests ./tests
 RUN npm test && npm run build
 
 FROM debian:trixie-slim AS toolchain
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl xz-utils build-essential pkg-config libcurl4-openssl-dev python3 openssl && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends ca-certificates curl xz-utils build-essential pkg-config libcurl4-openssl-dev python3 openssl && rm -rf /var/lib/apt/lists/*
 ARG ZIG_VERSION=0.17.1
 ARG ZIG_SHA256=3581863e3cbcfd0fce0efc682ce7e9e93da96668a977791d356a26d2a7e9b17a
 RUN curl --proto '=https' --proto-redir '=https' -fsSL "https://ziglang.org/download/${ZIG_VERSION}/zig-x86_64-linux-${ZIG_VERSION}.tar.xz" -o /tmp/zig.tar.xz \
@@ -37,7 +37,7 @@ FROM test AS build
 RUN zig build -Doptimize=ReleaseSafe
 
 FROM debian:trixie-slim AS runtime
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libcurl4t64 curl \
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends ca-certificates libcurl4t64 curl \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 10001 prontarr && useradd --uid 10001 --gid prontarr --no-create-home prontarr \
     && mkdir /data && chown prontarr:prontarr /data

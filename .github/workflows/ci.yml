@@ -29,6 +29,7 @@ jobs:
           target: runtime
           load: true
           tags: prontarr:ci
+          no-cache-filters: runtime
           push: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -75,6 +76,37 @@ jobs:
           exit-code: '1'
           format: json
           output: trivy.json
+      - name: Summarize runtime vulnerability findings
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          python3 - <<'PYREPORT'
+          import json, os
+          from pathlib import Path
+          rows = set()
+          reports = [name for name in ['grype.json', 'trivy.json'] if Path(name).is_file()]
+          if Path('grype.json').is_file():
+              data = json.loads(Path('grype.json').read_text())
+              for match in data.get('matches', []):
+                  v, p = match['vulnerability'], match['artifact']
+                  fixes = v.get('fix', {}).get('versions', [])
+                  if v.get('severity', '').upper() in ['HIGH', 'CRITICAL'] and fixes:
+                      rows.add((v['id'], p['name'], p['version'], ', '.join(fixes)))
+          if Path('trivy.json').is_file():
+              data = json.loads(Path('trivy.json').read_text())
+              for result in data.get('Results', []):
+                  for v in result.get('Vulnerabilities', []):
+                      if v.get('Severity') in ['HIGH', 'CRITICAL'] and v.get('FixedVersion'):
+                          rows.add((v['VulnerabilityID'], v['PkgName'], v['InstalledVersion'], v['FixedVersion']))
+          summary = '## Runtime vulnerabilities\n\nReports: ' + ', '.join(reports) + '\n\nFixable high/critical findings: ' + str(len(rows)) + '\n\n'
+          if len(reports) != 2:
+              summary += 'A scanner report is missing; inspect the failed scan steps.\n\n'
+          for row in sorted(rows):
+              summary += '- ' + ' · '.join(str(x).replace('\n', ' ') for x in row) + '\n'
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as out:
+              out.write(summary)
+          print(summary)
+          PYREPORT
       - name: Retain vulnerability reports
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
