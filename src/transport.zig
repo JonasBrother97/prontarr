@@ -177,6 +177,7 @@ fn request(allocator: std.mem.Allocator, connection: Connection, path: []const u
     if (status == 401 or status == 403) return error.UpstreamUnauthorized;
     if (status >= 300 and status < 400) return error.UpstreamRedirectBlocked;
     if (status == 409) return error.UpstreamConflict;
+    if (status == 429 or status >= 500) return error.UpstreamUnavailable;
     if (status < 200 or status > 204) return error.UpstreamHttpError;
     return buffer.body.items;
 }

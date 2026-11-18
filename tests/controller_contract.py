@@ -40,7 +40,7 @@ class Upstream(BaseHTTPRequestHandler):
             title=parse_qs(urlparse(self.path).query)['title'][0]
             number=int(title.split('S01E')[1][:2])
             return self.reply({'parsedEpisodeInfo':{'seriesTitle':'Fixture Series','seasonNumber':1,'episodeNumbers':[number]}})
-        if p=='/health':return self.reply({'healthy':self.healthy})
+        if p=='/health':return self.reply({'healthy':self.healthy},200 if self.healthy else 503)
         if p.startswith('/api/v3/moviefile/'):
             return self.reply(self.file,200 if self.file and self.file['id']==int(p.rsplit('/',1)[1]) else 404)
         if p=='/api/v3/movie/48':return self.reply({'id':48,'title':'Fixture','qualityProfileId':1,'originalLanguage':{'id':1},'monitored':True,'hasFile':self.file is not None,'movieFile':({k:v for k,v in self.file.items() if k not in ['customFormats','customFormatScore']} if self.embedded_slim and self.file else self.file or {})})
