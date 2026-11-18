@@ -316,5 +316,6 @@
   "Data from {{count}} h ago": "Data from {{count}} h ago",
   "The server returned HTTP {{status}}. Please try again.": "The server returned HTTP {{status}}. Please try again.",
   "Could not complete the operation (HTTP {{status}}).": "Could not complete the operation (HTTP {{status}}).",
-  "File scope or priority is unconfirmed: {{file}}": "File scope or priority is unconfirmed: {{file}}"
+  "File scope or priority is unconfirmed: {{file}}": "File scope or priority is unconfirmed: {{file}}",
+  "Checking manifests, the native profile and releases.": "Checking manifests, the native profile and releases."
 }

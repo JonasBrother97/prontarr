@@ -309,5 +309,6 @@
   "Upgrades desativados no perfil nativo.": "Upgrades are disabled in the native profile.",
   "Falha interna; consulte o log local.": "Internal error; check the local log.",
   "Corpo ausente.": "Missing request body.",
-  "Nova análise solicitada explicitamente.": "New analysis explicitly requested."
+  "Nova análise solicitada explicitamente.": "New analysis explicitly requested.",
+  "Consultando manifestos, perfil nativo e fontes.": "Checking manifests, the native profile and releases."
 }

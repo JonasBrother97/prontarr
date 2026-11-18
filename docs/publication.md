@@ -25,4 +25,4 @@ Before publishing, configure:
 
 Create/push a semantic version tag such as `v0.4.0`. Only successful tests on version-tag pushes from `JonasBrother97` can publish. Main branch pushes and pull requests build/test but never publish. Release images are tagged with the full version and major/minor version; stable versions also get `latest`. The workflow requests provenance and SBOM attestations. Missing publishing credentials fail with a clear configuration error without exposing secrets.
 
-Container builds need a running Docker daemon. The local daemon was unavailable while preparing the workflow; the native test suite was run, but the image still needs its first successful CI build before release.
+The CI Docker test build passed on GitHub. CI also builds the final runtime image and checks its health endpoint, non-root UID and disabled-by-default execution before release. Local Docker builds need a running Docker daemon.

@@ -30,7 +30,7 @@ In a local development setup behind network isolation, SSH loopback forwards may
 
 ## UI and API
 
-Open **Atividade → Fila de downloads**, then **Consultar serviços**. Observation refresh is manual by default. An optional checkbox enables refresh every 30 seconds while the tab is visible; it is disabled again on page reload. Backend health checks run separately every 30 seconds without querying upstream services. Each snapshot has a timestamp and a stale-data indicator after one minute. Arr records are joined to qBittorrent by case-insensitive download hashes. Library file presence and episode labels (SxxExx) are verified by querying each movie/episode, not inferred from queue status or a completed torrent.
+Open **Activity → Download queue**, then **Query services**. Observation refresh is manual by default. An optional checkbox enables refresh every 30 seconds while the tab is visible; it is disabled again on page reload. Backend health checks run separately every 30 seconds without querying upstream services. Each snapshot has a timestamp and a stale-data indicator after one minute. Arr records are joined to qBittorrent by case-insensitive download hashes. Library file presence and episode labels (SxxExx) are verified by querying each movie/episode, not inferred from queue status or a completed torrent.
 
 - `GET /api/connections`: sanitized configuration metadata, no network calls.
 - `POST /api/observe` with `{}`: read-only upstream snapshot, normalized queue/torrents and advisory explanations.

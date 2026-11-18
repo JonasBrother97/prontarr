@@ -179,7 +179,7 @@ pub const Runtime = struct {
                 .queued, .analyzing => {
                     self.last_job_id = job.id;
                     state.stage = .analyzing;
-                    try self.save(a, job.id, &state, "analysis_started", "Consultando manifestos, perfil nativo e fontes.");
+                    try self.save(a, job.id, &state, "analysis_started", "Checking manifests, the native profile and releases.");
                     const analysis = P.analyze(a, self.io, self.config, state.target, state.policy, true) catch |err| {
                         state.stage = .review;
                         state.error_code = @errorName(err);

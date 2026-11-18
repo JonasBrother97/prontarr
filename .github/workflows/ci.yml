@@ -23,10 +23,26 @@ jobs:
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
-          target: test
+          target: runtime
+          load: true
+          tags: prontarr:ci
           push: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: Verify the non-root runtime starts
+        shell: bash
+        run: |
+          docker run --detach --name prontarr-smoke --publish 127.0.0.1:5882:5882 prontarr:ci
+          trap 'docker logs prontarr-smoke; docker rm --force prontarr-smoke' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:5882/api/health > /tmp/prontarr-health.json; then
+              python3 -c 'import json; h=json.load(open("/tmp/prontarr-health.json")); assert h["status"] == "ok" and h["live_actions_enabled"] is False'
+              test "$(docker exec prontarr-smoke id -u)" = "10001"
+              exit 0
+            fi
+            sleep 1
+          done
+          exit 1
   publish:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && github.repository_owner == 'JonasBrother97'
     needs: test
