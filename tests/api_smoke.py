@@ -134,6 +134,23 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(request('/api/unknown')[0], 404)
         self.assertEqual(request('/api/simulate', self.example(), headers={'Origin': 'http://127.0.0.1:5173'})[0], 200)
 
+    def test_saved_simulation_can_be_reopened_without_execution(self):
+        original = self.example()
+        original['policy']['min_seeders'] = 17
+        status, saved, _ = request('/api/plans', original)
+        self.assertEqual(status, 201)
+        status, reopened, _ = request('/api/plans/' + str(saved['id']))
+        self.assertEqual(status, 200)
+        self.assertEqual(reopened['input'], original)
+        self.assertEqual(reopened['decision'], saved['decision'])
+        self.assertTrue(reopened['simulation'])
+        self.assertFalse(reopened['decision']['may_remove_first_copy'])
+
+    def test_reopen_rejects_missing_and_invalid_plan_ids(self):
+        self.assertEqual(request('/api/plans/999999')[0], 404)
+        for value in ['invalid', '0', '-1', '99999999999999999999999']:
+            self.assertEqual(request('/api/plans/' + value)[0], 400)
+
     def test_concurrent_writes_produce_distinct_plans(self):
         def save(index):
             data = self.example()

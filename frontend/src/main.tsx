@@ -28,6 +28,13 @@ import {
 import "./style.css";
 import { api } from "./api";
 import { Live } from "./Live";
+import {
+  useStoredState,
+  isBoolean,
+  pageFromHash,
+  routes,
+  type Page,
+} from "./preferences";
 
 type Stage =
   "missing" | "compact_downloading" | "watchable" | "upgrading" | "complete";
@@ -91,27 +98,65 @@ const queryClient = new QueryClient({
 });
 
 function App() {
-  const [page, setPage] = useState<
-    "dashboard" | "simulator" | "policy" | "live"
-  >("live");
+  const [page, setPage] = useState<Page>(() =>
+    pageFromHash(window.location.hash),
+  );
+  const [replayedPlan, setReplayedPlan] = useState<Input | null>(null);
   const [narrow, setNarrow] = useState(
     () => window.matchMedia("(max-width: 760px)").matches,
   );
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useStoredState(
+    "sidebar-collapsed",
+    false,
+    isBoolean,
+  );
   const [mobileMenu, setMobileMenu] = useState(false);
-  const [groups, setGroups] = useState({
-    activity: true,
-    tools: true,
-    settings: true,
-  });
+  const [groups, setGroups] = useStoredState(
+    "sidebar-groups",
+    { activity: true, tools: true, settings: true },
+    (
+      value,
+    ): value is { activity: boolean; tools: boolean; settings: boolean } =>
+      typeof value === "object" &&
+      value !== null &&
+      ["activity", "tools", "settings"].every(
+        (key) => typeof (value as Record<string, unknown>)[key] === "boolean",
+      ),
+  );
   const menuTrigger = useRef<HTMLButtonElement>(null);
   function navigate(target: typeof page) {
     setPage(target);
+    if (window.location.hash !== routes[target])
+      window.location.hash = routes[target];
     if (mobileMenu) {
       setMobileMenu(false);
       menuTrigger.current?.focus();
     }
   }
+  useEffect(() => {
+    const change = () => {
+      setPage(pageFromHash(window.location.hash));
+      setMobileMenu(false);
+    };
+    if (!window.location.hash)
+      window.history.replaceState(null, "", routes[page]);
+    window.addEventListener("hashchange", change);
+    return () => window.removeEventListener("hashchange", change);
+  }, []);
+  useEffect(() => {
+    const group =
+      page === "live"
+        ? "activity"
+        : page === "simulator"
+          ? "tools"
+          : page === "policy"
+            ? "settings"
+            : null;
+    if (group)
+      setGroups((previous) =>
+        previous[group] ? previous : { ...previous, [group]: true },
+      );
+  }, [page, setGroups]);
   function toggleGroup(group: keyof typeof groups) {
     setGroups((previous) => ({ ...previous, [group]: !previous[group] }));
   }
@@ -138,6 +183,8 @@ function App() {
   const health = useQuery({
     queryKey: ["health"],
     queryFn: () => api<{ status: string }>("/health"),
+    refetchInterval: 30_000,
+    retry: false,
   });
   return (
     <div
@@ -274,7 +321,7 @@ function App() {
             : health.isError
               ? "Sistema indisponível"
               : "Conectando…"}
-          <small>v0.2.0 · Desenvolvimento</small>
+          <small>v0.3.0 · Desenvolvimento</small>
         </div>
       </aside>
       <main>
@@ -325,9 +372,20 @@ function App() {
             </span>
           </div>
           {page === "dashboard" && (
-            <Dashboard onStart={() => setPage("simulator")} />
+            <Dashboard
+              onStart={() => {
+                setReplayedPlan(null);
+                navigate("simulator");
+              }}
+              onOpen={(input) => {
+                setReplayedPlan(input);
+                navigate("simulator");
+              }}
+            />
           )}
-          {page === "simulator" && <Simulator />}
+          {page === "simulator" && (
+            <Simulator initial={replayedPlan ?? undefined} />
+          )}
           {page === "policy" && <PolicyEditor />}
           {page === "live" && <Live />}
         </div>
@@ -338,7 +396,17 @@ function App() {
     </div>
   );
 }
-function Dashboard({ onStart }: { onStart: () => void }) {
+function Dashboard({
+  onStart,
+  onOpen,
+}: {
+  onStart: () => void;
+  onOpen: (input: Input) => void;
+}) {
+  const reopen = useMutation({
+    mutationFn: (id: number) => api<{ input: Input }>(`/plans/${id}`),
+    onSuccess: (data) => onOpen(data.input),
+  });
   const plans = useQuery({
     queryKey: ["plans"],
     queryFn: () => api<{ items: Plan[] }>("/plans"),
@@ -388,6 +456,7 @@ function Dashboard({ onStart }: { onStart: () => void }) {
           </React.Fragment>
         ))}
       </section>
+      <ErrorNotice error={reopen.error} />
       <section className="section">
         <div className="section-heading">
           <h2>Planos de simulação</h2>
@@ -428,6 +497,15 @@ function Dashboard({ onStart }: { onStart: () => void }) {
                 <span className="pill">
                   {stageNames[p.decision.next_stage]}
                 </span>
+                <button
+                  className="secondary"
+                  disabled={reopen.isPending}
+                  aria-label={`Reabrir simulação de ${p.title}`}
+                  onClick={() => reopen.mutate(p.id)}
+                >
+                  <FlaskConical size={14} />
+                  Reabrir
+                </button>
               </article>
             ))}
           </div>
@@ -565,7 +643,7 @@ function PolicyForm({ initial }: { initial: Policy }) {
     </>
   );
 }
-function Simulator() {
+function Simulator({ initial }: { initial?: Input }) {
   const policy = useQuery({
     queryKey: ["policy"],
     queryFn: () => api<Policy>("/policy"),
@@ -576,20 +654,34 @@ function Simulator() {
     ) : (
       <p>Carregando política…</p>
     );
-  return <SimulatorForm policy={policy.data} />;
+  return (
+    <SimulatorForm
+      key={initial ? JSON.stringify(initial) : "new"}
+      policy={policy.data}
+      initial={initial}
+    />
+  );
 }
-function SimulatorForm({ policy }: { policy: Policy }) {
-  const [input, setInput] = useState<Input>({
-    title: "",
-    policy,
-    snapshot: {
-      stage: "missing",
-      imported_episodes: 0,
-      expected_episodes: 1,
-      upgrade_import_confirmed: false,
+function SimulatorForm({
+  policy,
+  initial,
+}: {
+  policy: Policy;
+  initial?: Input;
+}) {
+  const [input, setInput] = useState<Input>(
+    initial ?? {
+      title: "",
+      policy,
+      snapshot: {
+        stage: "missing",
+        imported_episodes: 0,
+        expected_episodes: 1,
+        upgrade_import_confirmed: false,
+      },
+      candidates: [],
     },
-    candidates: [],
-  });
+  );
   const [decision, setDecision] = useState<Decision | null>(null);
   const client = useQueryClient();
   const simulate = useMutation({
@@ -797,9 +889,9 @@ function SimulatorForm({ policy }: { policy: Policy }) {
               </button>
             </div>
             <p className="muted">
-              Limite: {(policy.max_compact_bytes / GiB).toFixed(1)} GiB ·{" "}
-              {policy.min_seeders}+ seeds · {policy.min_resolution}–
-              {policy.max_resolution}p. Valores de seeds são estimativas.
+              Limite: {(input.policy.max_compact_bytes / GiB).toFixed(1)} GiB ·{" "}
+              {input.policy.min_seeders}+ seeds · {input.policy.min_resolution}–
+              {input.policy.max_resolution}p. Valores de seeds são estimativas.
             </p>
             {input.candidates.length === 0 && (
               <div className="candidate-empty">

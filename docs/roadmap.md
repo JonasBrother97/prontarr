@@ -19,6 +19,14 @@
 - [ ] Reconcile advisory state with the legacy controller state machine
 - [x] Contract tests with sanitized fixtures; no private titles/tokens committed
 
+## Reliability and daily-use improvements (0.3.0)
+
+- [x] Deep links and native browser history
+- [x] Safe local/session preferences, status filters and sorting
+- [x] Snapshot freshness and optional visible-tab refresh
+- [x] Replay saved simulation inputs without execution
+- [x] Frontend network/storage failure tests
+
 ## Milestone 3 — controlled execution
 
 - [ ] Durable per-episode and per-torrent state, idempotent webhook inbox/outbox

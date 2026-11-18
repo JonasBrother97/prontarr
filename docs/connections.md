@@ -1,6 +1,6 @@
 # Read-only service connections
 
-Prontarr 0.2 can observe Radarr, Sonarr and qBittorrent. It does not own or execute any live download action. No data is sent to indexers, and no native searches are triggered.
+Prontarr 0.3 can observe Radarr, Sonarr and qBittorrent. It does not own or execute any live download action. No data is sent to indexers, and no native searches are triggered.
 
 ## Configure
 
@@ -30,13 +30,13 @@ In a local development setup behind network isolation, SSH loopback forwards may
 
 ## UI and API
 
-Open **Atividade → Fila de downloads**, then **Consultar serviços**. There is no background polling. Each successful observation has a timestamp; refresh manually. Arr records are joined to qBittorrent by case-insensitive download hashes. Library file presence and episode labels (SxxExx) are verified by querying each movie/episode, not inferred from queue status or a completed torrent.
+Open **Atividade → Fila de downloads**, then **Consultar serviços**. Observation refresh is manual by default. An optional checkbox enables refresh every 30 seconds while the tab is visible; it is disabled again on page reload. Backend health checks run separately every 30 seconds without querying upstream services. Each snapshot has a timestamp and a stale-data indicator after one minute. Arr records are joined to qBittorrent by case-insensitive download hashes. Library file presence and episode labels (SxxExx) are verified by querying each movie/episode, not inferred from queue status or a completed torrent.
 
 - `GET /api/connections`: sanitized configuration metadata, no network calls.
 - `POST /api/observe` with `{}`: read-only upstream snapshot, normalized queue/torrents and advisory explanations.
 - `GET /api/health`: mode `read_only`, capability flag `observation_available`, live actions disabled.
 
-Returned observations are not persisted in SQLite. They remain in the browser's in-memory query cache until the page is reloaded. Local simulation plans continue to be persisted separately.
+Returned observations are not persisted in SQLite. They remain in the browser's in-memory query cache until the page is reloaded (or the inactive query is collected after 30 minutes). Local simulation plans continue to be persisted separately. Sidebar preferences use localStorage; the selected view, title/status filters and sort order use sessionStorage. Storage failures fall back to defaults. No service credentials or full queue snapshots are stored there.
 
 ## Limits and uncertainty
 

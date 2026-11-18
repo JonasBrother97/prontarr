@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
@@ -9,6 +9,18 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { api } from "./api";
+import { useStoredState, isShortText } from "./preferences";
+import {
+  isView,
+  isStatusFilter,
+  isSortOrder,
+  matchesStatus,
+  orderRows,
+  normalizeSearch,
+  freshness,
+  type StatusFilter,
+  type SortOrder,
+} from "./download-utils";
 
 type Torrent = {
   hash: string;
@@ -104,8 +116,36 @@ function Progress({ torrent }: { torrent: Torrent | null }) {
   );
 }
 export function Live() {
-  const [view, setView] = useState<"arr" | "torrents">("arr");
-  const [filter, setFilter] = useState("");
+  const [view, setView] = useStoredState(
+    "download-view",
+    "arr" as "arr" | "torrents",
+    isView,
+    "session",
+  );
+  const [filter, setFilter] = useStoredState(
+    "download-filter",
+    "",
+    isShortText,
+    "session",
+  );
+  const [statusFilter, setStatusFilter] = useStoredState(
+    "download-status",
+    "all" as StatusFilter,
+    isStatusFilter,
+    "session",
+  );
+  const [sortOrder, setSortOrder] = useStoredState(
+    "download-sort",
+    "original" as SortOrder,
+    isSortOrder,
+    "session",
+  );
+  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 15_000);
+    return () => window.clearInterval(timer);
+  }, []);
   const [page, setPage] = useState(0);
   const configuration = useQuery({
     queryKey: ["connections"],
@@ -115,10 +155,17 @@ export function Live() {
   const observation = useQuery({
     queryKey: ["observation"],
     queryFn: () => api<Observation>("/observe", {}),
-    enabled: false,
+    enabled: autoRefresh,
+    refetchInterval: autoRefresh ? 30_000 : false,
+    refetchIntervalInBackground: false,
+    gcTime: 30 * 60_000,
     retry: false,
   });
   const data = observation.data;
+  const age = data ? freshness(data.observed_at_ms, now) : null;
+  const effectiveStatus =
+    view === "torrents" && statusFilter === "review" ? "all" : statusFilter;
+  const search = normalizeSearch(filter);
   const services =
     data?.services ??
     configuration.data?.items.map((s) => ({
@@ -130,14 +177,26 @@ export function Live() {
       truncated: false,
     })) ??
     [];
-  const rows =
-    data?.items.filter((i) =>
-      i.title.toLowerCase().includes(filter.toLowerCase()),
-    ) ?? [];
-  const torrents =
-    data?.torrents.filter((t) =>
-      t.name.toLowerCase().includes(filter.toLowerCase()),
-    ) ?? [];
+  const rows = orderRows(
+    data?.items.filter(
+      (item) =>
+        normalizeSearch(item.title).includes(search) &&
+        matchesStatus(item.torrent, effectiveStatus, item.advice),
+    ) ?? [],
+    sortOrder,
+    (item) => item.title,
+    (item) => item.torrent,
+  );
+  const torrents = orderRows(
+    data?.torrents.filter(
+      (torrent) =>
+        normalizeSearch(torrent.name).includes(search) &&
+        matchesStatus(torrent, effectiveStatus),
+    ) ?? [],
+    sortOrder,
+    (torrent) => torrent.name,
+    (torrent) => torrent,
+  );
   const count = view === "arr" ? rows.length : torrents.length;
   const lastPage = Math.max(0, Math.ceil(count / 20) - 1);
   const currentPage = Math.min(page, lastPage);
@@ -167,6 +226,21 @@ export function Live() {
               : "Consultar serviços"}
         </button>
       </section>
+      <div className="refresh-controls">
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={autoRefresh}
+            onChange={(event) => setAutoRefresh(event.target.checked)}
+          />
+          Atualizar a cada 30 segundos
+        </label>
+        <span className="muted">
+          {autoRefresh
+            ? "Pausa quando a aba está oculta."
+            : "Consulta manual; nenhum comando altera os downloads."}
+        </span>
+      </div>
       {(configuration.error || observation.error) && (
         <p role="alert" className="error">
           {(observation.error ?? configuration.error)?.message}
@@ -181,11 +255,13 @@ export function Live() {
                 <Activity size={18} />
               </span>
               <h2>{names[service.name]}</h2>
-              <span className={`dot ${service.connected ? "green" : ""}`} />
+              <span
+                className={`dot ${service.connected && !age?.stale && !observation.isError ? "green" : ""}`}
+              />
             </div>
             <p>
               {service.connected
-                ? `Conectado · ${service.version}`
+                ? `${age?.stale || observation.isError ? "Na última consulta" : "Conectado"} · ${service.version}`
                 : service.error_code
                   ? (errors[service.error_code] ??
                     "Falha ao consultar o serviço.")
@@ -210,7 +286,17 @@ export function Live() {
               Última consulta:{" "}
               {new Date(data.observed_at_ms).toLocaleString("pt-BR")}
             </span>
-            <span>Nenhuma ação executada</span>
+            <span
+              className={
+                age?.stale || observation.isError
+                  ? "freshness stale"
+                  : "freshness"
+              }
+            >
+              {observation.isError
+                ? "Consulta falhou · dados anteriores"
+                : age?.label}
+            </span>
           </div>
           <section className="section">
             <div className="live-toolbar">
@@ -239,6 +325,7 @@ export function Live() {
                 <span className="sr-only">Filtrar por título</span>
                 <input
                   placeholder="Filtrar por título…"
+                  maxLength={200}
                   value={filter}
                   onChange={(e) => {
                     setFilter(e.target.value);
@@ -247,6 +334,68 @@ export function Live() {
                 />
               </label>
             </div>
+            <div className="filter-controls">
+              <label>
+                Situação
+                <select
+                  value={effectiveStatus}
+                  onChange={(event) => {
+                    setStatusFilter(event.target.value as StatusFilter);
+                    setPage(0);
+                  }}
+                >
+                  <option value="all">Todas</option>
+                  <option value="downloading">Em download</option>
+                  <option value="paused">Pausados</option>
+                  <option value="completed">Concluídos</option>
+                  {view === "arr" && (
+                    <option value="review">Precisam de revisão</option>
+                  )}
+                </select>
+              </label>
+              <label>
+                Ordenar por
+                <select
+                  value={sortOrder}
+                  onChange={(event) => {
+                    setSortOrder(event.target.value as SortOrder);
+                    setPage(0);
+                  }}
+                >
+                  <option value="original">Ordem da fila</option>
+                  <option value="name">Título A–Z</option>
+                  <option value="speed">Maior velocidade</option>
+                  <option value="size">Maior tamanho</option>
+                  <option value="progress">Menor progresso</option>
+                </select>
+              </label>
+              {(filter ||
+                effectiveStatus !== "all" ||
+                sortOrder !== "original") && (
+                <button
+                  className="text-button"
+                  onClick={() => {
+                    setFilter("");
+                    setStatusFilter("all");
+                    setSortOrder("original");
+                    setPage(0);
+                  }}
+                >
+                  Limpar filtros
+                </button>
+              )}
+              <span className="result-count">
+                {count
+                  ? `${currentPage * 20 + 1}–${Math.min((currentPage + 1) * 20, count)} de ${count}`
+                  : "0 resultados"}
+              </span>
+            </div>
+            {data.services.some((service) => service.truncated) && (
+              <p className="partial-notice">
+                Lista parcial: a consulta exibe até 25 registros por Arr e 500
+                torrents. Os filtros se aplicam aos itens consultados.
+              </p>
+            )}
             <DownloadTable
               items={
                 view === "arr"
@@ -263,13 +412,13 @@ export function Live() {
               <div className="empty">
                 <LayersIcon />
                 <h3>
-                  {filter
-                    ? "Nenhum título corresponde ao filtro"
+                  {filter || effectiveStatus !== "all"
+                    ? "Nenhum download corresponde aos filtros"
                     : "Nenhum registro nesta lista"}
                 </h3>
                 <p>
-                  {filter
-                    ? "Tente outro nome."
+                  {filter || effectiveStatus !== "all"
+                    ? "Altere o nome ou a situação, ou limpe os filtros."
                     : "Os serviços podem estar sem downloads na fila ou indisponíveis; confira os estados acima."}
                 </p>
               </div>
@@ -312,8 +461,8 @@ export function Live() {
         <p>
           <strong>Seu controlador atual continua no comando.</strong> A
           observação não faz buscas nos indexadores e não pausa, remove, retoma
-          ou substitui downloads. Atualize manualmente para obter uma nova
-          fotografia da fila.
+          ou substitui downloads. A atualização de 30 segundos é opcional e fica
+          desativada ao reabrir a página.
         </p>
       </div>
     </>

@@ -10,6 +10,8 @@ This repository is a working vertical slice, **not a production download control
 
 Implemented:
 
+- Status filters, sorting, freshness indicators and optional 30-second observation refresh.
+- Persistent menu preferences, deep links with browser navigation, and saved simulation replay.
 - Read-only service status, real Arr queues, torrent progress/speed/ETA and explained suggestions.
 - Private startup configuration, credential redaction, bounded requests and verified TLS.
 - A real Zig HTTP API, serving an embedded React application from one executable.
@@ -25,7 +27,7 @@ Reported seeds **do not guarantee download speed**. The simulator's audio and ap
 
 ## Run locally
 
-Requirements: **Zig 0.17.1**, **Node.js 22.12+** (tested on 26.13.0), npm, pkg-config, libcurl development headers/library (tested with 8.23.0), and a C toolchain supported by Zig. SQLite is compiled from the dependency's bundled amalgamation; no database service is needed.
+Requirements: **Zig 0.17.1**, **Node.js 22.18+** (tested on 26.13.0), npm, pkg-config, libcurl development headers/library (tested with 8.23.0), and a C toolchain supported by Zig. SQLite is compiled from the dependency's bundled amalgamation; no database service is needed.
 
 ```sh
 npm ci --prefix frontend
@@ -51,6 +53,7 @@ For frontend development, run `npm run dev --prefix frontend` while the backend 
 ## Verify
 
 ```sh
+npm test --prefix frontend
 zig build test
 python3 tests/api_smoke.py
 python3 tests/observe_contract.py
@@ -68,10 +71,11 @@ POST and PUT endpoints require `Content-Type: application/json`. Settings and pl
 | GET / PUT | `/api/policy` | Read or save simulation defaults |
 | POST | `/api/simulate` | Return a decision, without saving or executing it |
 | GET / POST | `/api/plans` | Latest 100 saved simulations / save a simulation |
+| GET | `/api/plans/:id` | Retrieve original inputs and decision for simulation replay |
 | GET | `/api/connections` | Redacted configured flags; no upstream requests |
 | POST | `/api/observe` | Real read-only queue/torrent observation |
 
-See [example request](docs/example-input.json), [architecture](docs/architecture.md), [dependency research](docs/dependencies.md) and [roadmap](docs/roadmap.md).
+See [changelog](docs/CHANGELOG.md), [example request](docs/example-input.json), [architecture](docs/architecture.md), [dependency research](docs/dependencies.md) and [roadmap](docs/roadmap.md).
 
 ## Status and distribution
 

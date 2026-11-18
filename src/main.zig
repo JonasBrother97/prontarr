@@ -86,9 +86,10 @@ pub fn main(init: std.process.Init) !void {
     router.post("/api/simulate", simulate, .{});
     router.get("/api/plans", plans, .{});
     router.post("/api/plans", savePlan, .{});
+    router.get("/api/plans/:id", getPlan, .{});
     router.get("/api/connections", connectionInfo, .{});
     router.post("/api/observe", observeLive, .{});
-    std.log.info("Prontarr 0.2.0 — http://127.0.0.1:5882 — read-only integrations", .{});
+    std.log.info("Prontarr 0.3.0 — http://127.0.0.1:5882 — read-only integrations", .{});
     try server.listen();
 }
 
@@ -105,7 +106,7 @@ fn css(_: *App, _: *httpz.Request, res: *httpz.Response) !void {
     res.body = @embedFile("app.css");
 }
 fn health(_: *App, _: *httpz.Request, res: *httpz.Response) !void {
-    try res.json(.{ .status = "ok", .version = "0.2.0", .mode = "read_only", .observation_available = true, .live_actions_enabled = false }, .{});
+    try res.json(.{ .status = "ok", .version = "0.3.0", .mode = "read_only", .observation_available = true, .live_actions_enabled = false }, .{});
 }
 
 fn connectionInfo(app: *App, _: *httpz.Request, res: *httpz.Response) !void {
@@ -193,4 +194,16 @@ fn plans(app: *App, _: *httpz.Request, res: *httpz.Response) !void {
     }
     if (rows.err) |err| return err;
     try res.json(.{ .items = list.items, .simulation = true }, .{});
+}
+
+fn getPlan(app: *App, req: *httpz.Request, res: *httpz.Response) !void {
+    const id = std.fmt.parseInt(i64, req.param("id") orelse "", 10) catch return failure(res, 400, "Identificador de plano inválido.");
+    if (id <= 0) return failure(res, 400, "Identificador de plano inválido.");
+    const conn = try app.pool.acquire(app.io);
+    defer app.pool.release(app.io, conn);
+    const row = (try conn.row("SELECT id,input,decision,created_at FROM plans WHERE id=?1", .{id})) orelse return failure(res, 404, "Plano não encontrado.");
+    defer row.deinit();
+    const input = try std.json.parseFromSliceLeaky(engine.Input, res.arena, row.text(1), .{ .allocate = .alloc_always });
+    const decision = try std.json.parseFromSliceLeaky(engine.Decision, res.arena, row.text(2), .{ .allocate = .alloc_always });
+    try res.json(.{ .id = row.int(0), .input = input, .decision = decision, .created_at = row.text(3), .simulation = true }, .{});
 }
