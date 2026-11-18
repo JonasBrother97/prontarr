@@ -22,6 +22,7 @@ class Upstream(BaseHTTPRequestHandler):
     controls = []
     selected = [1]
     episode_files = {}
+    embedded_slim = False
     def log_message(self,*args): pass
     def reply(self,data,status=200):
         body=json.dumps(data).encode(); self.send_response(status); self.send_header('Content-Type','application/json'); self.send_header('Content-Length',str(len(body))); self.end_headers();self.wfile.write(body)
@@ -40,7 +41,9 @@ class Upstream(BaseHTTPRequestHandler):
             number=int(title.split('S01E')[1][:2])
             return self.reply({'parsedEpisodeInfo':{'seriesTitle':'Fixture Series','seasonNumber':1,'episodeNumbers':[number]}})
         if p=='/health':return self.reply({'healthy':self.healthy})
-        if p=='/api/v3/movie/48':return self.reply({'id':48,'title':'Fixture','qualityProfileId':1,'originalLanguage':{'id':1},'monitored':True,'hasFile':self.file is not None,'movieFile':self.file or {}})
+        if p.startswith('/api/v3/moviefile/'):
+            return self.reply(self.file,200 if self.file and self.file['id']==int(p.rsplit('/',1)[1]) else 404)
+        if p=='/api/v3/movie/48':return self.reply({'id':48,'title':'Fixture','qualityProfileId':1,'originalLanguage':{'id':1},'monitored':True,'hasFile':self.file is not None,'movieFile':({k:v for k,v in self.file.items() if k not in ['customFormats','customFormatScore']} if self.embedded_slim and self.file else self.file or {})})
         profiles=[{'id':id,'name':name,'upgradeAllowed':True,'cutoff':19,'cutoffFormatScore':1000,'minFormatScore':0,'minUpgradeFormatScore':1,'formatItems':[{'format':1,'score':20},{'format':2,'score':score}],'items':[{'quality':{'id':7,'name':'Bluray-1080p'},'allowed':id!=3},{'quality':{'id':19,'name':'Bluray-2160p'},'allowed':id!=2}]} for id,name,score in [(1,'Fixture profile',1000),(2,'Compact 1080p',1000),(3,'Final 4K',2000)]]
         if p=='/api/v3/qualityprofile':return self.reply(profiles)
         if p.startswith('/api/v3/qualityprofile/'):
@@ -70,7 +73,7 @@ class Upstream(BaseHTTPRequestHandler):
 
 class ControllerContract(unittest.TestCase):
     def setUp(self):
-        Upstream.file=None;Upstream.grabs=[];Upstream.owner=False;Upstream.healthy=True;Upstream.conflict=False;Upstream.active_movie=False;Upstream.reject_compact=False;Upstream.source_movie=False;Upstream.original_state='downloading';Upstream.original_size=15*1024**3;Upstream.original_quality=19;Upstream.original_progress=.01;Upstream.controls=[];Upstream.selected=[1];Upstream.episode_files={}
+        Upstream.file=None;Upstream.grabs=[];Upstream.owner=False;Upstream.healthy=True;Upstream.conflict=False;Upstream.active_movie=False;Upstream.reject_compact=False;Upstream.source_movie=False;Upstream.original_state='downloading';Upstream.original_size=15*1024**3;Upstream.original_quality=19;Upstream.original_progress=.01;Upstream.controls=[];Upstream.selected=[1];Upstream.episode_files={};Upstream.embedded_slim=False
         self.server=ThreadingHTTPServer(('127.0.0.1',0),Upstream)
         self.thread=threading.Thread(target=self.server.serve_forever,daemon=True);self.thread.start()
         self.temp=tempfile.TemporaryDirectory(prefix='prontarr-controller-');self.folder=Path(self.temp.name)
@@ -261,6 +264,14 @@ class ControllerContract(unittest.TestCase):
         id=self.original_plan();request(f'/api/jobs/{id}/start',{});self.wait_stage(id,'compact');time.sleep(.2)
         request(f'/api/jobs/{id}/cancel',{});self.wait_stage(id,'cancelled')
         self.assertEqual(Upstream.controls,['stop','start']);self.assertEqual(Upstream.grabs,['compact'])
+
+    def test_dedicated_movie_file_restores_formats_omitted_from_movie_resource(self):
+        Upstream.file={'id':55,'quality':{'quality':{'id':7}},'customFormats':[{'id':1}],'customFormatScore':20}
+        Upstream.embedded_slim=True
+        id=self.plan();report=request(f'/api/jobs/{id}')[1]['report']
+        self.assertEqual(report['files'][0]['format_score'],20)
+        request(f'/api/jobs/{id}/start',{});self.wait_stage(id,'upgrading');time.sleep(.2)
+        self.assertEqual(Upstream.grabs,['upgrade'])
 
     def test_pack_scope_uses_file_priorities_not_eight_queue_rows(self):
         status,data,_=request('/api/jobs',{'target':{'app':'sonarr','media_id':9,'original_hash':'c'*40}})

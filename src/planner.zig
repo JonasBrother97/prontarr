@@ -143,9 +143,15 @@ pub fn files(a: A, config: T.Config, ref: Ref, profile: J.Value) ![]const FileSt
     if (ref.app == .radarr) {
         const m = try media(a, config, ref);
         const has = J.flag(m, "hasFile") orelse return error.UnknownFileIdentity;
-        const f = J.field(m, "movieFile");
+        var f = J.field(m, "movieFile");
         const id = J.num(f, "id");
         if (has and (id == null or id.? <= 0)) return error.UnknownFileIdentity;
+        // Embedded MovieFile resources omit computed custom formats in Radarr.
+        // Load the dedicated resource before comparing a post-import upgrade.
+        if (has and J.field(f, "customFormats") != .array) {
+            f = try get(a, c, try std.fmt.allocPrint(a, "/api/v3/moviefile/{d}", .{id.?}));
+            if (J.num(f, "id") != id) return error.UnknownFileIdentity;
+        }
         try result.append(a, .{ .episode_id = 0, .has_file = has, .file_id = if (has) id else null, .quality_id = J.num(J.field(J.field(f, "quality"), "quality"), "id"), .format_score = scoreFor(profile, f, allow_native) });
     } else {
         if (ref.episode_ids.len == 0) return error.UnknownEpisodeScope;
