@@ -1,0 +1,10 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Public SonarQube project identifier, not an analysis token"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''(^|/)sonar-project\.properties$''']
+regexTarget = "line"
+regexes = ['''^sonar\.projectKey=JonasBrother97_prontarr$''']

@@ -63,7 +63,7 @@ jobs:
       - name: Gitleaks entire history (redacted)
         run: >-
           docker run --rm -v "$PWD:/repo:ro" ghcr.io/gitleaks/gitleaks:v8.30.1
-          git /repo --redact --log-opts=--all
+          git /repo --redact --verbose --log-opts=--all --config /repo/.gitleaks.toml
       - name: TruffleHog entire history without credential verification
         if: ${{ !cancelled() }}
         shell: bash
