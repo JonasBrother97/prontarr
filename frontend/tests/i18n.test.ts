@@ -23,12 +23,16 @@ test("English is the default; corrupt or blocked storage safely falls back", () 
 });
 test("language changes localize live and legacy messages without changing metadata", async () => {
   assert.equal(t("Download profiles"), "Download profiles");
+  assert.equal(t("selectedEpisodes", { count: 1 }), "1 selected episode");
+  assert.equal(t("selectedEpisodes", { count: 2 }), "2 selected episodes");
   assert.equal(
     t("Primeira cópia em andamento; biblioteca preservada."),
     "First copy is downloading; library preserved.",
   );
   await setLanguage("pt-BR");
   assert.equal(locale(), "pt-BR");
+  assert.equal(t("selectedEpisodes", { count: 1 }), "1 episódio selecionado");
+  assert.equal(t("selectedEpisodes", { count: 2 }), "2 episódios selecionados");
   assert.equal(t("Download profiles"), "Perfis de download");
   assert.equal(
     t("First copy is downloading; library preserved."),

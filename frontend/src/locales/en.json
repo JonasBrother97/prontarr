@@ -317,5 +317,16 @@
   "The server returned HTTP {{status}}. Please try again.": "The server returned HTTP {{status}}. Please try again.",
   "Could not complete the operation (HTTP {{status}}).": "Could not complete the operation (HTTP {{status}}).",
   "File scope or priority is unconfirmed: {{file}}": "File scope or priority is unconfirmed: {{file}}",
-  "Checking manifests, the native profile and releases.": "Checking manifests, the native profile and releases."
+  "Checking manifests, the native profile and releases.": "Checking manifests, the native profile and releases.",
+  "Could not load profiles from {{app}}. Check the connection and refresh the list.": "Could not load profiles from {{app}}. Check the connection and refresh the list.",
+  "Minimum score: {{score}}.": "Minimum score: {{score}}.",
+  "Pack {{status}}: {{selected}}; {{missing}}": "Pack {{status}}: {{selected}}; {{missing}}",
+  "Limit: {{size}} GiB · {{seeds}}+ seeds · {{min}}–{{max}}p. Seeder counts are estimates.": "Limit: {{size}} GiB · {{seeds}}+ seeds · {{min}}–{{max}}p. Seeder counts are estimates.",
+  "selectedEpisodes_one": "{{count}} selected episode",
+  "selectedEpisodes_other": "{{count}} selected episodes",
+  "missingQueueItems_one": "{{count}} queue item missing from the torrent.",
+  "missingQueueItems_other": "{{count}} queue items missing from the torrent.",
+  "savedPlans_one": "{{count}} saved",
+  "savedPlans_other": "{{count}} saved",
+  "v{{version}} · Alpha": "v{{version}} · Alpha"
 }

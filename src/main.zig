@@ -120,7 +120,7 @@ pub fn main(init: std.process.Init) !void {
     router.post("/api/jobs/:id/analyze", analyzeLiveJob, .{});
     router.get("/api/library", library, .{});
     router.get("/api/library/:app/:id/episodes", libraryEpisodes, .{});
-    std.log.info("Prontarr 0.4.0 — http://127.0.0.1:5882 — controlled execution available", .{});
+    std.log.info("Prontarr 0.4.0-alpha.1 — http://127.0.0.1:5882 — controlled execution available", .{});
     try server.listen();
 }
 
@@ -137,7 +137,7 @@ fn css(_: *App, _: *httpz.Request, res: *httpz.Response) !void {
     res.body = @embedFile("app.css");
 }
 fn health(app: *App, _: *httpz.Request, res: *httpz.Response) !void {
-    try res.json(.{ .status = "ok", .version = "0.4.0", .mode = if (app.connections.execution.enabled) "controlled" else "read_only", .observation_available = true, .live_actions_enabled = app.connections.execution.enabled }, .{});
+    try res.json(.{ .status = "ok", .version = "0.4.0-alpha.1", .mode = if (app.connections.execution.enabled) "controlled" else "read_only", .observation_available = true, .live_actions_enabled = app.connections.execution.enabled }, .{});
 }
 
 fn connectionInfo(app: *App, _: *httpz.Request, res: *httpz.Response) !void {

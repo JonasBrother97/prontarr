@@ -317,5 +317,16 @@
   "The server returned HTTP {{status}}. Please try again.": "O servidor respondeu com erro HTTP {{status}}. Tente novamente.",
   "Could not complete the operation (HTTP {{status}}).": "Não foi possível concluir a operação (HTTP {{status}}).",
   "File scope or priority is unconfirmed: {{file}}": "Arquivo sem escopo ou prioridade confirmados: {{file}}",
-  "Checking manifests, the native profile and releases.": "Consultando manifestos, perfil nativo e fontes."
+  "Checking manifests, the native profile and releases.": "Consultando manifestos, perfil nativo e fontes.",
+  "Could not load profiles from {{app}}. Check the connection and refresh the list.": "Não foi possível consultar os perfis do {{app}}. Verifique a conexão e atualize a lista.",
+  "Minimum score: {{score}}.": "Pontuação mínima: {{score}}.",
+  "Pack {{status}}: {{selected}}; {{missing}}": "Pacote {{status}}: {{selected}}; {{missing}}",
+  "Limit: {{size}} GiB · {{seeds}}+ seeds · {{min}}–{{max}}p. Seeder counts are estimates.": "Limite: {{size}} GiB · {{seeds}}+ seeds · {{min}}–{{max}}p. Valores de seeds são estimativas.",
+  "selectedEpisodes_one": "{{count}} episódio selecionado",
+  "selectedEpisodes_other": "{{count}} episódios selecionados",
+  "missingQueueItems_one": "{{count}} item da fila ausente do torrent.",
+  "missingQueueItems_other": "{{count}} itens da fila ausentes do torrent.",
+  "savedPlans_one": "{{count}} salvo",
+  "savedPlans_other": "{{count}} salvos",
+  "v{{version}} · Alpha": "v{{version}} · Alfa"
 }

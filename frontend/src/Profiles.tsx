@@ -73,9 +73,10 @@ export function ProfilesSettings({
             </legend>
             {service?.error_code && (
               <p className="error" role="alert">
-                {t("Could not load profiles from")}
-                {app}
-                {t(". Check the connection and refresh the list.")}
+                {t(
+                  "Could not load profiles from {{app}}. Check the connection and refresh the list.",
+                  { app },
+                )}
               </p>
             )}
             <div className="form-grid">
@@ -124,8 +125,11 @@ export function ProfilesSettings({
                       <small>
                         {selected.qualities.join(", ") ||
                           t("No allowed qualities")}
-                        {t(". Minimum score:")}
-                        {selected.min_format_score}.
+                        {". "}
+                        {t("Minimum score: {{score}}.", {
+                          score:
+                            selected.min_format_score.toLocaleString(locale()),
+                        })}
                         {field === "final_id" && !selected.upgrade_allowed
                           ? t(" Upgrades are disabled in this profile.")
                           : ""}

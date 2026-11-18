@@ -471,7 +471,7 @@ export function Live() {
       <div className="bottom-note">
         <ShieldCheck size={18} />
         <p>
-          <strong>{t("This query is read only.")}</strong>
+          <strong>{t("This query is read only.")}</strong>{" "}
           {t(
             "Observation does not search indexers, pause, remove, resume or replace downloads. The optional 30-second refresh is disabled when you reopen the page.",
           )}

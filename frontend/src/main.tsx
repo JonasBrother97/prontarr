@@ -334,7 +334,9 @@ function App() {
             : health.isError
               ? t("System unavailable")
               : t("Connecting…")}
-          <small>{t("v0.4.0 · Development")}</small>
+          <small>
+            {t("v{{version}} · Alpha", { version: "0.4.0-alpha.1" })}
+          </small>
         </div>
       </aside>
       <main>
@@ -490,7 +492,7 @@ function Dashboard({
         <div className="section-heading">
           <h2>{t("Simulation plans")}</h2>
           <span className="count">
-            {plans.data?.items.length ?? 0} {t("saved")}
+            {t("savedPlans", { count: plans.data?.items.length ?? 0 })}
           </span>
         </div>
         {plans.isPending ? (
@@ -549,7 +551,7 @@ function Dashboard({
       <div className="bottom-note">
         <ShieldCheck size={18} />
         <p>
-          <strong>{t("Your Arr apps manage the library.")}</strong>
+          <strong>{t("Your Arr apps manage the library.")}</strong>{" "}
           {t(
             "Prontarr plans the sequence. Radarr and Sonarr handle imports and replacement.",
           )}
@@ -930,12 +932,18 @@ function SimulatorForm({
               </button>
             </div>
             <p className="muted">
-              {t("Limit:")}
-              {(input.policy.max_compact_bytes / GiB).toFixed(1)} GiB ·{" "}
-              {input.policy.min_seeders}
-              {t("+ seeds ·")} {input.policy.min_resolution}–
-              {input.policy.max_resolution}
-              {t("p. Seeder counts are estimates.")}
+              {t(
+                "Limit: {{size}} GiB · {{seeds}}+ seeds · {{min}}–{{max}}p. Seeder counts are estimates.",
+                {
+                  size: (input.policy.max_compact_bytes / GiB).toLocaleString(
+                    locale(),
+                    { minimumFractionDigits: 1, maximumFractionDigits: 1 },
+                  ),
+                  seeds: input.policy.min_seeders,
+                  min: input.policy.min_resolution,
+                  max: input.policy.max_resolution,
+                },
+              )}
             </p>
             {input.candidates.length === 0 && (
               <div className="candidate-empty">

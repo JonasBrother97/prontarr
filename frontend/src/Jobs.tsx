@@ -309,12 +309,15 @@ export function Jobs() {
           )}
           {report?.scope && (
             <p>
-              {t("Pack")}
-              {report.scope.verified ? t("verified") : t("unverified")}:{" "}
-              {report.scope.selected_episode_ids.length}
-              {t("selected episode(s);")}
-              {report.scope.absent_queue_episode_ids.length}{" "}
-              {t("queue item(s) missing from the torrent.")}{" "}
+              {t("Pack {{status}}: {{selected}}; {{missing}}", {
+                status: t(report.scope.verified ? "verified" : "unverified"),
+                selected: t("selectedEpisodes", {
+                  count: report.scope.selected_episode_ids.length,
+                }),
+                missing: t("missingQueueItems", {
+                  count: report.scope.absent_queue_episode_ids.length,
+                }),
+              })}{" "}
               {report.scope.warnings.map((w) => t(w)).join(" ")}
             </p>
           )}
