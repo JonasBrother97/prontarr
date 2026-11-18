@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
-  ArrowDown,
   Check,
   CircleHelp,
   RefreshCw,
@@ -147,11 +146,7 @@ export function Live() {
       <section className="page-heading">
         <div>
           <span className="eyebrow">OBSERVAÇÃO · DADOS REAIS</span>
-          <h1>
-            O que está acontecendo
-            <br />
-            <span>com seus downloads.</span>
-          </h1>
+          <h1>Fila de downloads</h1>
           <p>
             Consulte a fila e compare as sugestões sem alterar nenhum torrent.
           </p>
@@ -252,93 +247,18 @@ export function Live() {
                 />
               </label>
             </div>
-            {view === "arr" ? (
-              <div className="live-list">
-                {rows
-                  .slice(currentPage * 20, (currentPage + 1) * 20)
-                  .map((item) => (
-                    <article
-                      className="card live-item"
-                      key={`${item.app}:${item.queue_id}`}
-                    >
-                      <div className="live-item-top">
-                        <div className="live-title">
-                          <span className="eyebrow">
-                            {names[item.app]} ·{" "}
-                            {item.season_number !== null &&
-                              item.episode_number !== null &&
-                              `S${String(item.season_number).padStart(2, "0")}E${String(item.episode_number).padStart(2, "0")} · `}
-                            {item.resolution
-                              ? `${item.resolution}p`
-                              : "Qualidade não identificada"}
-                          </span>
-                          <h3>{item.title}</h3>
-                          <span className="muted">
-                            {item.has_file === null
-                              ? "Arquivo não verificado"
-                              : item.has_file
-                                ? "Versão disponível na biblioteca"
-                                : "Ainda sem arquivo importado"}
-                            {item.custom_format_score !== null &&
-                              ` · Formatos: ${item.custom_format_score >= 0 ? "+" : ""}${item.custom_format_score}`}
-                          </span>
-                        </div>
-                        <span
-                          className={`advice-pill ${item.advice === "consider_compact" ? "attention" : ""}`}
-                        >
-                          {advice[item.advice]}
-                        </span>
-                      </div>
-                      <div className="torrent-metrics">
-                        <Progress torrent={item.torrent} />
-                        <span>
-                          <ArrowDown size={14} />
-                          {size(item.torrent?.download_speed ?? 0)}/s
-                        </span>
-                        <span>{item.torrent?.seeds ?? "—"} seeds</span>
-                        <span>
-                          {item.torrent ? size(item.torrent.bytes) : "—"}
-                        </span>
-                      </div>
-                      <details>
-                        <summary>
-                          <CircleHelp size={14} />
-                          Por que esta sugestão?
-                        </summary>
-                        <p>{item.reason}</p>
-                        <small>
-                          Sugestão baseada na fila observada. Áudio, escopo
-                          completo e qualidade final ainda exigem validação.
-                        </small>
-                      </details>
-                    </article>
-                  ))}
-              </div>
-            ) : (
-              <div className="live-list">
-                {torrents
-                  .slice(currentPage * 20, (currentPage + 1) * 20)
-                  .map((t) => (
-                    <article className="card live-item" key={t.hash}>
-                      <div className="live-item-top">
-                        <div className="live-title">
-                          <h3>{t.name}</h3>
-                          <span className="muted">{t.state}</span>
-                        </div>
-                        <span className="pill">{size(t.bytes)}</span>
-                      </div>
-                      <div className="torrent-metrics">
-                        <Progress torrent={t} />
-                        <span>
-                          <ArrowDown size={14} />
-                          {size(t.download_speed)}/s
-                        </span>
-                        <span>{t.seeds} seeds</span>
-                      </div>
-                    </article>
-                  ))}
-              </div>
-            )}
+            <DownloadTable
+              items={
+                view === "arr"
+                  ? rows.slice(currentPage * 20, (currentPage + 1) * 20)
+                  : undefined
+              }
+              torrents={
+                view === "torrents"
+                  ? torrents.slice(currentPage * 20, (currentPage + 1) * 20)
+                  : undefined
+              }
+            />
             {count === 0 && (
               <div className="empty">
                 <LayersIcon />
@@ -401,4 +321,120 @@ export function Live() {
 }
 function LayersIcon() {
   return <Activity size={25} />;
+}
+
+function DownloadTable({
+  items,
+  torrents,
+}: {
+  items?: Item[];
+  torrents?: Torrent[];
+}) {
+  const rows = items
+    ? items.map((item) => ({
+        key: `${item.app}:${item.queue_id}`,
+        title: item.title,
+        origin: [
+          names[item.app],
+          item.season_number !== null && item.episode_number !== null
+            ? `S${String(item.season_number).padStart(2, "0")}E${String(item.episode_number).padStart(2, "0")}`
+            : null,
+          item.resolution ? `${item.resolution}p` : null,
+        ]
+          .filter(Boolean)
+          .join(" · "),
+        note:
+          item.has_file === null
+            ? "Arquivo não verificado"
+            : item.has_file
+              ? "Versão disponível"
+              : "Aguardando importação",
+        torrent: item.torrent,
+        status: advice[item.advice],
+        tone:
+          item.advice === "needs_review" || item.advice === "consider_compact"
+            ? "warning"
+            : "neutral",
+        reason: item.reason,
+      }))
+    : (torrents ?? []).map((torrent) => ({
+        key: torrent.hash,
+        title: torrent.name,
+        origin: "qBittorrent",
+        note:
+          torrent.progress >= 1
+            ? "Download concluído"
+            : "Download em andamento",
+        torrent,
+        status: /^(stopped|paused)/.test(torrent.state)
+          ? "Pausado"
+          : torrent.progress >= 1
+            ? "Em seed"
+            : torrent.state === "stalledDL"
+              ? "Sem transferência"
+              : "Baixando",
+        tone: torrent.progress >= 1 ? "success" : "neutral",
+        reason: null,
+      }));
+  if (!rows.length) return null;
+  return (
+    <div className="download-table-wrap">
+      <table
+        className="download-table"
+        aria-label={items ? "Fila dos Arr" : "Torrents do qBittorrent"}
+      >
+        <thead>
+          <tr>
+            <th scope="col">Título</th>
+            <th scope="col">Progresso</th>
+            <th scope="col">Tamanho</th>
+            <th scope="col">Velocidade</th>
+            <th scope="col">Seeds</th>
+            <th scope="col">Situação</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.key}>
+              <td className="download-title">
+                <strong title={row.title}>{row.title}</strong>
+                <small>
+                  {row.origin}
+                  <span> · {row.note}</span>
+                </small>
+              </td>
+              <td className="download-progress">
+                <span className="mobile-cell-label">Progresso</span>
+                <Progress torrent={row.torrent} />
+              </td>
+              <td>
+                <span className="mobile-cell-label">Tamanho</span>
+                {row.torrent ? size(row.torrent.bytes) : "—"}
+              </td>
+              <td>
+                <span className="mobile-cell-label">Velocidade</span>
+                {row.torrent ? `${size(row.torrent.download_speed)}/s` : "—"}
+              </td>
+              <td>
+                <span className="mobile-cell-label">Seeds</span>
+                {row.torrent?.seeds ?? "—"}
+              </td>
+              <td className="download-status">
+                <span className={`status-label ${row.tone}`}>{row.status}</span>
+                {row.reason && (
+                  <details>
+                    <summary>
+                      <CircleHelp size={13} />
+                      Detalhes
+                    </summary>
+                    <p>{row.reason}</p>
+                  </details>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }

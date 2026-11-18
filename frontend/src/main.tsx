@@ -88,7 +88,7 @@ const queryClient = new QueryClient({
 function App() {
   const [page, setPage] = useState<
     "dashboard" | "simulator" | "policy" | "live"
-  >("dashboard");
+  >("live");
   const health = useQuery({
     queryKey: ["health"],
     queryFn: () => api<{ status: string }>("/health"),
@@ -109,7 +109,7 @@ function App() {
           </span>
           prontarr<span className="alpha">alpha</span>
         </a>
-        <div className="nav-label">ESPAÇO DE TRABALHO</div>
+        <div className="nav-label">GERENCIAMENTO</div>
         <nav aria-label="Navegação principal">
           <button
             className={page === "dashboard" ? "active" : ""}
@@ -117,6 +117,13 @@ function App() {
           >
             <LayoutDashboard size={18} />
             Visão geral
+          </button>
+          <button
+            className={page === "live" ? "active" : ""}
+            onClick={() => setPage("live")}
+          >
+            <Layers3 size={18} />
+            Downloads
           </button>
           <button
             className={page === "simulator" ? "active" : ""}
@@ -130,29 +137,35 @@ function App() {
             onClick={() => setPage("policy")}
           >
             <Settings2 size={18} />
-            Política de download
-          </button>
-          <button
-            className={page === "live" ? "active" : ""}
-            onClick={() => setPage("live")}
-          >
-            <Layers3 size={18} />
-            Downloads reais
+            Política
           </button>
         </nav>
         <div className="sidebar-foot">
           <span className={`dot ${health.isSuccess ? "green" : ""}`} />
           {health.isSuccess
-            ? "Backend conectado"
+            ? "Sistema online"
             : health.isError
-              ? "Backend indisponível"
+              ? "Sistema indisponível"
               : "Conectando…"}
-          <small>Zig · SQLite · v0.2.0</small>
+          <small>v0.2.0 · Desenvolvimento</small>
         </div>
       </aside>
       <main>
         <header className="topbar">
-          <div>Seu conteúdo, no seu tempo</div>
+          <div className="breadcrumb">
+            <span>Prontarr</span>
+            <ChevronRight size={14} />
+            <strong>
+              {
+                {
+                  dashboard: "Visão geral",
+                  live: "Downloads",
+                  simulator: "Simulador",
+                  policy: "Política de download",
+                }[page]
+              }
+            </strong>
+          </div>
           <span className="mode">
             <ShieldCheck size={14} />
             Somente leitura
@@ -190,11 +203,7 @@ function Dashboard({ onStart }: { onStart: () => void }) {
       <section className="page-heading">
         <div>
           <span className="eyebrow">DOWNLOAD EM DUAS ETAPAS</span>
-          <h1>
-            Pronto para assistir.
-            <br />
-            <span>Melhor com o tempo.</span>
-          </h1>
+          <h1>Visão geral</h1>
           <p>
             Primeiro uma versão compacta. Depois, a qualidade que você quer.
           </p>
@@ -322,11 +331,7 @@ function PolicyForm({ initial }: { initial: Policy }) {
       <div className="page-heading">
         <div>
           <span className="eyebrow">PRIMEIRA CÓPIA</span>
-          <h1>
-            Pequena o suficiente.
-            <br />
-            <span>Boa para assistir.</span>
-          </h1>
+          <h1>Política de download</h1>
           <p>
             Valores padrão para novas simulações. O limite é para o torrent
             inteiro.
@@ -503,7 +508,7 @@ function SimulatorForm({ policy }: { policy: Policy }) {
       <div className="page-heading">
         <div>
           <span className="eyebrow">DECISÕES EXPLICÁVEIS</span>
-          <h1>Teste antes de baixar.</h1>
+          <h1>Simulador de downloads</h1>
           <p>
             Informe candidatos e o estado de importação. Nenhuma ação será
             executada.
