@@ -68,3 +68,11 @@ The initial profile filters allowed qualities and custom-format minimums in addi
 Native approval, original audio and the existing rejection/blocklist protections remain mandatory. Selecting a different profile does not edit the title's native `qualityProfileId`. The sole rejection exception is the verified original queue conflict described above. A stricter native title profile may therefore prevent a source that the initial profile would otherwise allow.
 
 Jobs retain their policy snapshot. Saving defaults affects new jobs; **Reanalyze with current defaults** explicitly adopts current settings for a stopped/ready plan. Running plans must be cancelled before reanalysis. Existing simulations and jobs without selection fields remain compatible and use the title's profile.
+
+## Coexistence with other controllers
+
+Prontarr does not disable Cleanuparr, change Arr quality profiles, or add exclusion tags to torrents. Its standalone ownership table only prevents competing Prontarr plans; it does not lock other apps.
+
+Before submitting a release and while following a running plan, Prontarr rechecks the native Arr queue. If another app introduces a different download for the same movie or selected episode, Prontarr cancels its own plan, releases its internal ownership and restores only an original it previously paused. It leaves the replacement untouched and records its hash so automatic intake does not immediately take it over again. Other episodes are evaluated independently when their scope is known.
+
+This is a conservative handoff, not a distributed transaction with other apps: another controller can still change a queue between the check and the Arr request. Ambiguous queue scope requires review, and uncertain requests remain protected against blind retries. Removing a torrent does not authorize Prontarr to recreate it automatically. Native import/replacement and cleanup remain the responsibility of Arr and Cleanuparr.

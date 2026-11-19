@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.0-alpha.6 — Cooperative download handoff
+
+- Yield active plans to replacement downloads introduced by other apps.
+- Preserve Cleanuparr/native replacements and prevent immediate automatic retake.
+- Ignore queue changes for other episodes when their scope is explicit.
+
 ## 0.4.0-alpha.5 — Portable amd64 runtime
 
 - Compile release images for baseline x86-64 rather than the CI runner's native CPU features.

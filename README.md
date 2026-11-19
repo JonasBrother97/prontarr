@@ -43,7 +43,8 @@ Reported seeds are an availability hint, not a speed guarantee. Releases must sa
 | --- | --- |
 | Two-stage planning | Separate initial and final quality profiles, discovered from each Arr API |
 | Persistent jobs | Searchable SQLite plan history, status filters, recovery guidance, cancellation and explicit reanalysis |
-| Recovery | Recorded upstream effects, restart protection and exclusive media ownership |
+| Recovery | Recorded upstream effects, restart protection and ownership between Prontarr plans |
+| Coexistence | Yield to external replacement downloads without blocking native Arr upgrades or cleanup |
 | Import verification | Native file identities and scope-aware episode checks before advancing |
 | Live visibility | Arr queues, torrent progress, speed, ETA and explained decisions |
 | Policy controls | Compact size, resolution and seed thresholds; original-audio checks |
@@ -62,7 +63,7 @@ docker run -d --name prontarr \
   --restart unless-stopped \
   -p 127.0.0.1:5882:5882 \
   -v prontarr-data:/data \
-  jonasbrother97/prontarr:0.4.0-alpha.5
+  jonasbrother97/prontarr:0.4.0-alpha.6
 ```
 
 Open [http://127.0.0.1:5882](http://127.0.0.1:5882). This starts the UI and simulator with live execution disabled. Configure private service connections using the [connection guide](docs/connections.md), then follow the [execution guide](docs/execution.md) for the guarded pilot.

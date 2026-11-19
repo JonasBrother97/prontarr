@@ -229,6 +229,18 @@ pub const Runtime = struct {
                             if (previous_error == null or !std.mem.eql(u8, previous_error.?, @errorName(err))) try self.save(a, job.id, &state, "waiting_external", @errorName(err));
                             return;
                         }
+                        if (err == error.ExternalDownloadDetected) {
+                            self.compensate(a, job.id, &state) catch |recovery_error| {
+                                state.stage = .review;
+                                state.error_code = @errorName(recovery_error);
+                                try self.save(a, job.id, &state, "needs_review", "External download detected; restoring the original needs attention.");
+                                return;
+                            };
+                            state.stage = .cancelled;
+                            state.error_code = null;
+                            try self.save(a, job.id, &state, "external_handoff", "Another app changed this download. Prontarr released control and preserved the replacement; native cleanup and upgrades remain enabled.");
+                            return;
+                        }
                         state.stage = .review;
                         self.restoreOriginal(a, job.id, &state) catch {};
                         try self.save(a, job.id, &state, "needs_review", @errorName(err));
@@ -406,12 +418,66 @@ pub const Runtime = struct {
         }
         return null;
     }
+    fn queueRecordOwned(self: *Runtime, a: A, id: i64, state: State, record: J.Value, hash: []const u8) !bool {
+        for ([_]?[]const u8{ state.target.original_hash, state.compact_hash, state.upgrade_hash }) |known| {
+            if (known) |value| if (std.ascii.eqlIgnoreCase(value, hash)) return true;
+        }
+        // Episode plans can have several compact hashes. Match each queue entry to
+        // a journaled request, not merely to an old release-search candidate.
+        const analysis = state.analysis orelse return false;
+        for ([_]bool{ false, true }) |upgrade| {
+            const releases = if (upgrade) try activeUpgrades(a, state) else try choices(a, analysis, false);
+            for (releases) |release| {
+                const title_matches = std.mem.eql(u8, J.str(record, "title") orelse "", release.candidate.title);
+                const matches = if (release.info_hash) |value| std.ascii.eqlIgnoreCase(value, hash) else title_matches;
+                if (!matches) continue;
+                const role: []const u8 = if (upgrade) "grab_upgrade" else "grab_compact";
+                const key = if (release.candidate.episode_id == 0) try std.fmt.allocPrint(a, "{d}:{s}", .{ state.generation, role }) else try std.fmt.allocPrint(a, "{d}:{s}:{d}", .{ state.generation, role, release.candidate.episode_id });
+                const db = try self.pool.acquire(self.io);
+                defer self.pool.release(self.io, db);
+                if (try db.row("SELECT 1 FROM live_effects WHERE job_id=?1 AND effect_key=?2 AND status IN ('sending','sent','uncertain')", .{ id, key })) |row| {
+                    row.deinit();
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+    fn queueRecordInScope(state: State, record: J.Value) bool {
+        if (J.num(record, if (state.target.app == .radarr) "movieId" else "seriesId") != state.target.media_id) return false;
+        if (state.target.app == .sonarr) {
+            if (J.num(record, "episodeId")) |episode_id| {
+                for (state.target.episode_ids) |wanted| if (wanted == episode_id) return true;
+                return false;
+            }
+        }
+        return true;
+    }
+    fn respectExternalQueue(self: *Runtime, a: A, id: i64, state: State) !void {
+        const queue = try P.get(a, try P.connection(self.config, state.target.app), "/api/v3/queue?page=1&pageSize=1000");
+        if ((J.num(queue, "totalRecords") orelse 1001) > 1000) return error.QueueScopeUnknown;
+        var external = false;
+        for (J.items(queue, "records")) |record| {
+            if (!queueRecordInScope(state, record)) continue;
+            const hash = J.str(record, "downloadId") orelse return error.QueueScopeUnknown;
+            if (!J.validHash(hash)) return error.QueueScopeUnknown;
+            if (try self.queueRecordOwned(a, id, state, record, hash)) continue;
+            const db = try self.pool.acquire(self.io);
+            defer self.pool.release(self.io, db);
+            // Do not immediately take over a Cleanuparr/native replacement on the
+            // next automatic intake scan after releasing this plan.
+            try db.exec("INSERT INTO intake_seen(app,media_id,hash,job_id) VALUES(?1,?2,?3,?4) ON CONFLICT DO NOTHING", .{ @tagName(state.target.app), state.target.media_id, try std.ascii.allocLowerString(a, hash), id });
+            external = true;
+        }
+        if (external) return error.ExternalDownloadDetected;
+    }
     fn grab(self: *Runtime, a: A, id: i64, state: *State, release: P.Release, upgrade: bool) !void {
         if (release.guid.len == 0) return error.ExistingReleaseCannotBeGrabbed;
         const key = if (release.candidate.episode_id == 0) try std.fmt.allocPrint(a, "{d}:{s}", .{ state.generation, if (upgrade) "grab_upgrade" else "grab_compact" }) else try std.fmt.allocPrint(a, "{d}:{s}:{d}", .{ state.generation, if (upgrade) "grab_upgrade" else "grab_compact", release.candidate.episode_id });
         try self.vpn(a);
         const first = try self.effect(a, id, key, "arr_grab");
         if (first) {
+            try self.respectExternalQueue(a, id, state.*);
             const fresh = try self.load(a, id);
             if (fresh.cancel_requested) return error.CancelRequested;
             try self.effectStatus(id, key, "sending");
@@ -505,11 +571,12 @@ pub const Runtime = struct {
         const profile = try self.nativeProfile(a, state.*);
         const current = try P.files(a, self.config, state.target, profile);
         const compact = try choices(a, analysis, false);
+        if (state.stage == .compact or state.stage == .upgrading) try self.respectExternalQueue(a, id, state.*);
         if (state.stage == .claiming) {
             const queue = try P.get(a, try P.connection(self.config, state.target.app), "/api/v3/queue?page=1&pageSize=1000");
             if ((J.num(queue, "totalRecords") orelse 1001) > 1000) return error.QueueScopeUnknown;
             for (J.items(queue, "records")) |record| {
-                if (J.num(record, if (state.target.app == .radarr) "movieId" else "seriesId") != state.target.media_id) continue;
+                if (!queueRecordInScope(state.*, record)) continue;
                 const hash = J.str(record, "downloadId") orelse return error.QueueScopeUnknown;
                 if (state.target.original_hash == null or !std.ascii.eqlIgnoreCase(hash, state.target.original_hash.?)) return error.ExistingDownloadNeedsAnalysis;
             }
