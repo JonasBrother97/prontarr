@@ -146,6 +146,13 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(request('/api/unknown')[0], 404)
         self.assertEqual(request('/api/simulate', self.example(), headers={'Origin': 'http://127.0.0.1:5173'})[0], 200)
 
+    def test_json_media_type_accepts_parameters_and_rejects_other_subtypes(self):
+        for media_type in ('application/json; charset=utf-8', 'Application/JSON'):
+            status, _, _ = request('/api/simulate', self.example(), headers={'Content-Type': media_type})
+            self.assertEqual(status, 200)
+        status, _, _ = request('/api/simulate', self.example(), headers={'Content-Type': 'application/json-seq'})
+        self.assertEqual(status, 415)
+
     def test_saved_simulation_can_be_reopened_without_execution(self):
         original = self.example()
         original['policy']['min_seeders'] = 17

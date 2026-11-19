@@ -34,7 +34,9 @@ const App = struct {
         }
         if (req.method == .POST or req.method == .PUT) {
             const content_type = req.header("content-type") orelse "";
-            if (!std.mem.startsWith(u8, content_type, "application/json")) return failure(res, 415, "Send application/json.");
+            const parameter_start = std.mem.indexOfScalar(u8, content_type, ';') orelse content_type.len;
+            const media_type = std.mem.trim(u8, content_type[0..parameter_start], " \t");
+            if (!std.ascii.eqlIgnoreCase(media_type, "application/json")) return failure(res, 415, "Send application/json.");
         }
         action(self, req, res) catch |err| {
             std.log.err("request failed: {s}", .{@errorName(err)});

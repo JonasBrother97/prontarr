@@ -5,6 +5,9 @@ services:
       - "127.0.0.1:5882:5882"
     volumes:
       - prontarr-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true

@@ -10,6 +10,11 @@ Do not put credentials or exploitable vulnerability details in a public issue. U
 
 Keep connection files private, protect the database directory and place remote access behind authentication. The published pilot has no built-in login. Do not commit connection files, tokens, databases or private logs.
 
+For Docker deployments, bind published ports explicitly to loopback unless the proxy
+requires a separate interface. On that interface, restrict backend access to trusted
+proxy sources and enforce equivalent rules for IPv4 and IPv6. A working HTTPS login
+redirect does not verify that direct backend access is blocked.
+
 ## Automated checks
 
 See [CI security coverage](docs/security-ci.md). A successful scan does not prove the absence of vulnerabilities, and standard SAST tools do not analyze Zig.
