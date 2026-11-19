@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Filter plan history by application and sort by title or update time.
+- Preserve search within the browser session and remember history preferences.
+- Refresh plan history and selected details manually, with the last successful refresh time visible.
+- Keep failed history loads distinct from empty history and disable plan actions when detail refresh fails.
+
 ## 0.4.0-alpha.3 — Plan history and recovery guidance
 
 - Search plans by title or application, ignoring accents.

@@ -40,3 +40,26 @@ export const jobErrorMessages: Record<string, string> = {
   CompactImportTimeout:
     "The first copy was not imported within six hours. Check the Arr queue and import errors before continuing.",
 };
+
+export type JobSort = "updated" | "oldest" | "title";
+export const isJobSort = (value: unknown): value is JobSort =>
+  ["updated", "oldest", "title"].includes(value as string);
+export type JobApp = "all" | "radarr" | "sonarr";
+export const isJobApp = (value: unknown): value is JobApp =>
+  ["all", "radarr", "sonarr"].includes(value as string);
+export function sortJobs<
+  T extends { id: number; title: string; updated_at_ms: number },
+>(jobs: readonly T[], order: JobSort, language: string): T[] {
+  return [...jobs].sort((a, b) => {
+    const difference =
+      order === "title"
+        ? a.title.localeCompare(b.title, language, {
+            numeric: true,
+            sensitivity: "base",
+          })
+        : order === "oldest"
+          ? a.updated_at_ms - b.updated_at_ms
+          : b.updated_at_ms - a.updated_at_ms;
+    return difference || a.id - b.id;
+  });
+}

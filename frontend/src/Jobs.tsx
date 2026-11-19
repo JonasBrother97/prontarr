@@ -2,8 +2,13 @@ import { t, locale } from "./i18n.ts";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
-import { useStoredState } from "./preferences";
+import { useStoredState, isShortText } from "./preferences";
 import {
+  sortJobs,
+  isJobSort,
+  isJobApp,
+  type JobSort,
+  type JobApp,
   matchesJob,
   isJobFilter,
   jobErrorMessages,
@@ -70,7 +75,22 @@ export function Jobs() {
       (typeof value === "number" && Number.isSafeInteger(value) && value > 0),
     "session",
   );
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useStoredState(
+    "job-search",
+    "",
+    isShortText,
+    "session",
+  );
+  const [order, setOrder] = useStoredState<JobSort>(
+    "job-sort",
+    "updated",
+    isJobSort,
+  );
+  const [application, setApplication] = useStoredState<JobApp>(
+    "job-application",
+    "all",
+    isJobApp,
+  );
   const [filter, setFilter] = useStoredState<JobFilter>(
     "job-filter",
     "all",
@@ -138,8 +158,23 @@ export function Jobs() {
       void cache.invalidateQueries({ queryKey: ["jobs"] });
     },
   });
-  const visibleJobs =
-    jobs.data?.items.filter((job) => matchesJob(job, query, filter)) ?? [];
+  const visibleJobs = sortJobs(
+    jobs.data?.items.filter(
+      (job) =>
+        matchesJob(job, query, filter) &&
+        (application === "all" || job.target.app === application),
+    ) ?? [],
+    order,
+    locale(),
+  );
+  const staleDetails = Boolean(detail.error);
+  const refreshing =
+    jobs.isFetching || (selected !== null && detail.isFetching);
+  function refresh() {
+    void jobs.refetch();
+    void library.refetch();
+    if (selected !== null) void detail.refetch();
+  }
   const data = detail.data;
   const report = data?.report;
   const selectedCandidates =
@@ -233,6 +268,19 @@ export function Jobs() {
       )}
       <div className="card">
         <h2>{t("Saved history")}</h2>
+        <div className="job-actions">
+          <button className="secondary" disabled={refreshing} onClick={refresh}>
+            {refreshing ? t("Refreshing…") : t("Refresh plans")}
+          </button>
+          {jobs.dataUpdatedAt > 0 && (
+            <span className="muted">
+              {t("Last successful refresh:")}{" "}
+              <time dateTime={new Date(jobs.dataUpdatedAt).toISOString()}>
+                {new Date(jobs.dataUpdatedAt).toLocaleTimeString(locale())}
+              </time>
+            </span>
+          )}
+        </div>
         <div className="filter-controls">
           <label>
             {t("Search plans")}
@@ -258,6 +306,33 @@ export function Jobs() {
               <option value="finished">{t("Finished plans")}</option>
             </select>
           </label>
+          <label>
+            {t("Application")}
+            <select
+              value={application}
+              onChange={(event) => {
+                if (isJobApp(event.target.value))
+                  setApplication(event.target.value);
+              }}
+            >
+              <option value="all">{t("All applications")}</option>
+              <option value="radarr">Radarr</option>
+              <option value="sonarr">Sonarr</option>
+            </select>
+          </label>
+          <label>
+            {t("Sort plans")}
+            <select
+              value={order}
+              onChange={(event) => {
+                if (isJobSort(event.target.value)) setOrder(event.target.value);
+              }}
+            >
+              <option value="updated">{t("Recently updated")}</option>
+              <option value="oldest">{t("Oldest update first")}</option>
+              <option value="title">{t("Title A–Z")}</option>
+            </select>
+          </label>
           <span className="result-count" role="status">
             {t("{{shown}} of {{total}} plans", {
               shown: visibleJobs.length,
@@ -267,6 +342,10 @@ export function Jobs() {
         </div>
         {jobs.isPending ? (
           <p>{t("Loading plans…")}</p>
+        ) : jobs.error && !jobs.data ? (
+          <p>
+            {t("Could not load plan history. Use Refresh plans to try again.")}
+          </p>
         ) : !jobs.data?.items.length ? (
           <p>{t("No plans yet.")}</p>
         ) : !visibleJobs.length ? (
@@ -277,6 +356,7 @@ export function Jobs() {
               onClick={() => {
                 setQuery("");
                 setFilter("all");
+                setApplication("all");
               }}
             >
               {t("Clear filters")}
@@ -326,6 +406,9 @@ export function Jobs() {
           </div>
         )}
       </div>
+      {selected !== null && detail.isPending && (
+        <p role="status">{t("Loading plan details…")}</p>
+      )}
       {data && (
         <div className="card job-detail">
           <h2>{data.job.title}</h2>
@@ -343,10 +426,18 @@ export function Jobs() {
               <code>{data.job.error_code}</code>
             </p>
           )}
+          {staleDetails && (
+            <p className="error" role="alert">
+              {t(
+                "These plan details could not be refreshed. Actions are disabled until a successful refresh.",
+              )}
+            </p>
+          )}
           <div className="job-actions">
             <button
               className="secondary"
               disabled={
+                staleDetails ||
                 !data.execution_allowed ||
                 data.job.stage !== "ready" ||
                 action.isPending
@@ -360,9 +451,11 @@ export function Jobs() {
             <button
               className="secondary"
               disabled={
+                staleDetails ||
                 !["ready", "review", "cancelled", "completed"].includes(
                   data.job.stage,
-                ) || action.isPending
+                ) ||
+                action.isPending
               }
               onClick={() =>
                 action.mutate({ id: data.job.id, action: "analyze" })
@@ -373,6 +466,7 @@ export function Jobs() {
             <button
               className="secondary"
               disabled={
+                staleDetails ||
                 ["completed", "cancelled"].includes(data.job.stage) ||
                 action.isPending
               }
@@ -431,7 +525,7 @@ export function Jobs() {
                     (choice) => choice.candidate_id === c.id,
                   )
                     ? t("First copy")
-                    : "Upgrade"}
+                    : t("Upgrade")}
                 </strong>
                 <p>{c.title}</p>
                 <p>

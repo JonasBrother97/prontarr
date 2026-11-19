@@ -346,5 +346,15 @@
   "The first copy was not imported within six hours. Check the Arr queue and import errors before continuing.": "A primeira cópia não foi importada em seis horas. Confira a fila do Arr e os erros de importação antes de continuar.",
   "Review is required before execution can continue. Check the event history for details.": "É necessária uma revisão antes de continuar a execução. Consulte o histórico de eventos para detalhes.",
   "The download VPN is unhealthy. Active plans wait for recovery; plans needing attention must be reanalyzed.": "A VPN de downloads não está saudável. Planos ativos aguardam a recuperação; planos que precisam de atenção devem ser reanalisados.",
-  "An upstream service is temporarily unavailable. Active plans retry automatically; plans needing attention must be reanalyzed.": "Um serviço está temporariamente indisponível. Planos ativos tentam novamente automaticamente; planos que precisam de atenção devem ser reanalisados."
+  "An upstream service is temporarily unavailable. Active plans retry automatically; plans needing attention must be reanalyzed.": "Um serviço está temporariamente indisponível. Planos ativos tentam novamente automaticamente; planos que precisam de atenção devem ser reanalisados.",
+  "Refresh plans": "Atualizar planos",
+  "Refreshing…": "Atualizando…",
+  "Last successful refresh:": "Última atualização bem-sucedida:",
+  "All applications": "Todas as aplicações",
+  "Sort plans": "Ordenar planos",
+  "Recently updated": "Atualizados recentemente",
+  "Oldest update first": "Atualizações mais antigas primeiro",
+  "Could not load plan history. Use Refresh plans to try again.": "Não foi possível carregar o histórico de planos. Use Atualizar planos para tentar novamente.",
+  "Loading plan details…": "Carregando detalhes do plano…",
+  "These plan details could not be refreshed. Actions are disabled until a successful refresh.": "Não foi possível atualizar os detalhes deste plano. As ações ficam desabilitadas até uma atualização bem-sucedida."
 }

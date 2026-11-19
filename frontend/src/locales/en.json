@@ -346,5 +346,15 @@
   "The first copy was not imported within six hours. Check the Arr queue and import errors before continuing.": "The first copy was not imported within six hours. Check the Arr queue and import errors before continuing.",
   "Review is required before execution can continue. Check the event history for details.": "Review is required before execution can continue. Check the event history for details.",
   "The download VPN is unhealthy. Active plans wait for recovery; plans needing attention must be reanalyzed.": "The download VPN is unhealthy. Active plans wait for recovery; plans needing attention must be reanalyzed.",
-  "An upstream service is temporarily unavailable. Active plans retry automatically; plans needing attention must be reanalyzed.": "An upstream service is temporarily unavailable. Active plans retry automatically; plans needing attention must be reanalyzed."
+  "An upstream service is temporarily unavailable. Active plans retry automatically; plans needing attention must be reanalyzed.": "An upstream service is temporarily unavailable. Active plans retry automatically; plans needing attention must be reanalyzed.",
+  "Refresh plans": "Refresh plans",
+  "Refreshing…": "Refreshing…",
+  "Last successful refresh:": "Last successful refresh:",
+  "All applications": "All applications",
+  "Sort plans": "Sort plans",
+  "Recently updated": "Recently updated",
+  "Oldest update first": "Oldest update first",
+  "Could not load plan history. Use Refresh plans to try again.": "Could not load plan history. Use Refresh plans to try again.",
+  "Loading plan details…": "Loading plan details…",
+  "These plan details could not be refreshed. Actions are disabled until a successful refresh.": "These plan details could not be refreshed. Actions are disabled until a successful refresh."
 }
