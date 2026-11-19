@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.0-alpha.5 — Portable amd64 runtime
+
+- Compile release images for baseline x86-64 rather than the CI runner's native CPU features.
+- Fix startup with an illegal instruction on CPUs lacking runner-specific instruction sets.
+- Includes the plan navigation and refresh safeguards from alpha.4.
+
 ## 0.4.0-alpha.4 — Plan navigation and refresh safeguards
 
 - Filter plan history by application and sort by title or update time.

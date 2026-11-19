@@ -26,7 +26,7 @@ RUN zig build test
 # Compile the shipped binary once, then test that exact optimized executable.
 FROM toolchain AS build
 COPY --from=frontend /build/frontend/dist ./frontend/dist
-RUN zig build -Doptimize=ReleaseSafe
+RUN zig build -Doptimize=ReleaseSafe -Dcpu=baseline
 
 FROM build AS test
 COPY tests ./tests

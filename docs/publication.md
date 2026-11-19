@@ -6,7 +6,7 @@ Target repository: `JonasBrother97/prontarr`. License: MIT. Corporate GitHub acc
 
 The GitHub Actions workflow runs on pull requests, pushes to `main`, version tags and manual dispatch. Independent jobs run frontend and Zig unit tests, source checks, runtime builds and image scans. The Docker integration stage runs API contracts, observation contracts, controller lifecycle and ownership tests. Builds use Zig 0.17.1 with its official SHA-256 checksum and the committed npm lockfile. Actions are pinned to reviewed upstream commit SHAs.
 
-The container currently targets **linux/amd64**. The runtime uses a non-root UID/GID of 10001, stores SQLite under `/data`, and does not contain Node, compilers, API keys or local connections. The Docker context uses an allowlist and excludes Git history, databases, environment files, caches and private runtime configuration.
+The container currently targets **linux/amd64**, with an explicit baseline x86-64 CPU target so release binaries do not inherit CI runner-specific instruction sets. The runtime uses a non-root UID/GID of 10001, stores SQLite under `/data`, and does not contain Node, compilers, API keys or local connections. The Docker context uses an allowlist and excludes Git history, databases, environment files, caches and private runtime configuration.
 
 ```sh
 docker compose up --build -d
@@ -27,4 +27,4 @@ Follow the [trunk-based contribution flow](../CONTRIBUTING.md): integrate into `
 
 The CI Docker test build passed on GitHub. CI also builds the final runtime image and checks its health endpoint, non-root UID and disabled-by-default execution before release. Local Docker builds need a running Docker daemon.
 
-Versioned prereleases start at `0.4.0-alpha.1`; for this release use `docker pull jonasbrother97/prontarr:0.4.0-alpha.4`. Pre-release tags do not update `latest`.
+Versioned prereleases start at `0.4.0-alpha.1`; for this release use `docker pull jonasbrother97/prontarr:0.4.0-alpha.5`. Pre-release tags do not update `latest`.
