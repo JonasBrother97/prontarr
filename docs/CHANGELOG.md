@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0-alpha.3 — Plan history and recovery guidance
+
+- Search plans by title or application, ignoring accents.
+- Filter active plans, plans needing attention, and finished plans.
+- Show last update times and diagnostic codes in plan history.
+- Explain common recovery conditions in English and Brazilian Portuguese.
+- Cover lifecycle filtering and translated recovery guidance with frontend tests.
+
 ## 0.4.0-alpha.2 — Standalone execution
 
 - Native monitored queue intake with opt-in automatic execution and SQLite ownership.

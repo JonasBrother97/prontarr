@@ -27,4 +27,4 @@ Create/push a semantic version tag such as `v0.4.0`. Only successful tests on ve
 
 The CI Docker test build passed on GitHub. CI also builds the final runtime image and checks its health endpoint, non-root UID and disabled-by-default execution before release. Local Docker builds need a running Docker daemon.
 
-Versioned prereleases start at `0.4.0-alpha.1`; for this release use `docker pull jonasbrother97/prontarr:0.4.0-alpha.2`. Pre-release tags do not update `latest`.
+Versioned prereleases start at `0.4.0-alpha.1`; for this release use `docker pull jonasbrother97/prontarr:0.4.0-alpha.3`. Pre-release tags do not update `latest`.
