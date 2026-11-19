@@ -525,6 +525,35 @@ pub const Runtime = struct {
     fn usesOriginal(state: State) bool {
         return state.target.original_hash != null and !state.adopt_original;
     }
+    fn startParallelUpgrade(self: *Runtime, a: A, id: i64, state: *State, profile: J.Value, compact: []const P.Release, current: []const P.FileState) !void {
+        if (!state.policy.parallel_upgrade or !(J.flag(profile, "upgradeAllowed") orelse false)) return;
+        const analysis = state.analysis orelse return error.AnalysisMissing;
+        if (!analysis.report.upgrade_allowed) return;
+        if (usesOriginal(state.*)) {
+            // Previously paused originals recover through the normal sequential flow.
+            if (!state.original_stopped) state.upgrade_hash = state.target.original_hash;
+            return;
+        }
+        for (try choices(a, analysis, true)) |target| {
+            var missing = false;
+            for (current) |file| {
+                if (file.episode_id == target.candidate.episode_id and !file.has_file) missing = true;
+            }
+            if (!missing) continue;
+            for (compact) |first| {
+                if (!state.adopt_original and first.candidate.episode_id != target.candidate.episode_id) continue;
+                if (std.mem.eql(u8, first.candidate.id, target.candidate.id)) continue;
+                if (first.info_hash) |hash| {
+                    if (target.info_hash) |other| {
+                        if (std.ascii.eqlIgnoreCase(hash, other)) continue;
+                    }
+                }
+                if (P.compare(profile, first.candidate.quality_id, first.candidate.format_score, target.candidate.quality_id, target.candidate.format_score).better != true) continue;
+                try self.grab(a, id, state, target, true);
+                break;
+            }
+        }
+    }
     fn beginUpgrade(self: *Runtime, a: A, id: i64, state: *State, current: []const P.FileState, profile: J.Value) !void {
         const targets = try choices(a, state.analysis orelse return error.AnalysisMissing, true);
         var baseline: std.ArrayList(P.FileState) = .empty;
@@ -608,11 +637,12 @@ pub const Runtime = struct {
                 const wanted: usize = if (state.target.app == .radarr) 1 else state.target.episode_ids.len;
                 if (compact.len != wanted) return error.NoCompactCandidate;
                 for (compact) |selected| if (!selected.candidate.compact or !selected.candidate.native_approved or selected.guid.len == 0) return error.UnsafeCandidate;
-                if (state.target.original_hash) |hash| {
+                const keep_parallel = state.policy.parallel_upgrade and analysis.report.upgrade_allowed and (J.flag(profile, "upgradeAllowed") orelse false);
+                if (!keep_parallel) if (state.target.original_hash) |hash| {
                     state.original_stopped = true;
                     try self.save(a, id, state, "original_stop_planned", "Record recovery actions before pausing the original.");
                     try self.controlTorrent(a, id, state.*, hash, false);
-                }
+                };
             }
             state.stage = .compact;
             state.compact_sent_at_ms = std.Io.Timestamp.now(self.io, .real).toMilliseconds();
@@ -629,6 +659,7 @@ pub const Runtime = struct {
                 if (!state.adopt_original) for (compact) |selected| {
                     try self.grab(a, id, state, selected, false);
                 };
+                try self.startParallelUpgrade(a, id, state, profile, compact, current);
                 try self.save(a, id, state, "", "");
                 return;
             }

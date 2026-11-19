@@ -356,5 +356,6 @@
   "Oldest update first": "Atualizações mais antigas primeiro",
   "Could not load plan history. Use Refresh plans to try again.": "Não foi possível carregar o histórico de planos. Use Atualizar planos para tentar novamente.",
   "Loading plan details…": "Carregando detalhes do plano…",
-  "These plan details could not be refreshed. Actions are disabled until a successful refresh.": "Não foi possível atualizar os detalhes deste plano. As ações ficam desabilitadas até uma atualização bem-sucedida."
+  "These plan details could not be refreshed. Actions are disabled until a successful refresh.": "Não foi possível atualizar os detalhes deste plano. As ações ficam desabilitadas até uma atualização bem-sucedida.",
+  "Download an eligible upgrade alongside the first copy": "Baixar um upgrade elegível junto com a primeira cópia"
 }

@@ -4,6 +4,7 @@ pub const Stage = enum { missing, compact_downloading, watchable, upgrading, com
 pub const Action = enum { wait, download_compact, search_upgrade, keep_available, complete };
 pub const ProfilePair = struct { initial_id: ?i64 = null, final_id: ?i64 = null };
 pub const Policy = struct {
+    parallel_upgrade: bool = false,
     radarr_profiles: ProfilePair = .{},
     sonarr_profiles: ProfilePair = .{},
     max_compact_bytes: u64 = 4 * 1024 * 1024 * 1024,

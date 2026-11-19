@@ -82,6 +82,7 @@ class ApiTests(unittest.TestCase):
 
     def example(self):
         value = json.loads((ROOT / 'docs/example-input.json').read_text())
+        value['policy'].setdefault('parallel_upgrade', False)
         for app in ('radarr_profiles','sonarr_profiles'):value['policy'].setdefault(app, {'initial_id':None,'final_id':None})
         return value
 

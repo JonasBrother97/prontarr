@@ -43,6 +43,7 @@ import {
 type Stage =
   "missing" | "compact_downloading" | "watchable" | "upgrading" | "complete";
 type Policy = ProfileChoices & {
+  parallel_upgrade?: boolean;
   max_compact_bytes: number;
   min_seeders: number;
   min_resolution: number;
@@ -608,6 +609,16 @@ function PolicyForm({ initial }: { initial: Policy }) {
         }}
       >
         <ProfilesSettings value={draft} onChange={update} />
+        <label>
+          <input
+            type="checkbox"
+            checked={draft.parallel_upgrade ?? false}
+            onChange={(event) =>
+              update({ parallel_upgrade: event.target.checked })
+            }
+          />
+          {t("Download an eligible upgrade alongside the first copy")}
+        </label>
         <h2>{t("First-copy limits")}</h2>
         <div className="form-grid">
           <label>

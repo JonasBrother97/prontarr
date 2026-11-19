@@ -76,3 +76,13 @@ Prontarr does not disable Cleanuparr, change Arr quality profiles, or add exclus
 Before submitting a release and while following a running plan, Prontarr rechecks the native Arr queue. If another app introduces a different download for the same movie or selected episode, Prontarr cancels its own plan, releases its internal ownership and restores only an original it previously paused. It leaves the replacement untouched and records its hash so automatic intake does not immediately take it over again. Other episodes are evaluated independently when their scope is known.
 
 This is a conservative handoff, not a distributed transaction with other apps: another controller can still change a queue between the check and the Arr request. Ambiguous queue scope requires review, and uncertain requests remain protected against blind retries. Removing a torrent does not authorize Prontarr to recreate it automatically. Native import/replacement and cleanup remain the responsibility of Arr and Cleanuparr.
+
+
+## Parallel downloads
+
+In Settings, enable **Download an eligible upgrade alongside the first copy** for
+new or reanalyzed plans. The default is sequential. Prontarr requests the compact
+copy first and then requests a distinct, better candidate when upgrades are
+allowed and the release qualifies. A verified original upgrade already in the
+queue can keep downloading. Radarr and Sonarr remain responsible for import and
+replacement decisions. Both transfers share the download client's bandwidth.

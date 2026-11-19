@@ -132,6 +132,25 @@ class ControllerContract(unittest.TestCase):
         encoded=json.dumps(final)
         for secret in ['private-owner-token','fixture-secret','indexer_id','"guid"']:self.assertNotIn(secret,encoded)
         self.assertEqual((self.folder/'db.sqlite').stat().st_mode&0o777,0o600)
+    def test_parallel_upgrade_can_import_first_without_regrabbing(self):
+        policy=request('/api/policy')[1]
+        policy['parallel_upgrade']=True
+        self.assertEqual(request('/api/policy',policy,'PUT')[0],200)
+        job=self.plan()
+        self.assertEqual(request(f'/api/jobs/{job}/start',{})[0],202)
+        for _ in range(100):
+            if len(Upstream.grabs)==2:
+                break
+            time.sleep(.1)
+        self.assertEqual(Upstream.grabs,['compact','upgrade'])
+        self.assertIsNone(Upstream.file)
+        self.stop()
+        self.start()
+        Upstream.file={'id':11,'quality':{'quality':{'id':19}},'customFormatScore':1000}
+        self.wait_stage(job,'completed')
+        self.assertEqual(Upstream.grabs,['compact','upgrade'])
+        self.assertFalse(Upstream.owner)
+
     def test_vpn_failure_prevents_claim_and_grab_then_cancel(self):
         id=self.plan();Upstream.healthy=False;request(f'/api/jobs/{id}/start',{});time.sleep(2.3)
         self.assertEqual(Upstream.grabs,[]);self.assertFalse(Upstream.owner)
