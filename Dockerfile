@@ -36,22 +36,22 @@ COPY integrations ./integrations
 COPY docs/example-input.json ./docs/example-input.json
 
 FROM test-fixtures AS test-api
-RUN python3 tests/api_smoke.py && touch /api-passed
+RUN --network=none python3 tests/api_smoke.py && touch /api-passed
 
 FROM test-fixtures AS test-observe
-RUN python3 tests/observe_contract.py && touch /observe-passed
+RUN --network=none python3 tests/observe_contract.py && touch /observe-passed
 
 FROM test-fixtures AS test-controller-a
-RUN python3 tests/controller_shard.py 0 3 && touch /controller-a-passed
+RUN --network=none python3 tests/controller_shard.py 0 3 && touch /controller-a-passed
 
 FROM test-fixtures AS test-controller-b
-RUN python3 tests/controller_shard.py 1 3 && touch /controller-b-passed
+RUN --network=none python3 tests/controller_shard.py 1 3 && touch /controller-b-passed
 
 FROM test-fixtures AS test-controller-c
-RUN python3 tests/controller_shard.py 2 3 && touch /controller-c-passed
+RUN --network=none python3 tests/controller_shard.py 2 3 && touch /controller-c-passed
 
 FROM test-fixtures AS test-ownership
-RUN python3 tests/ownership_contract.py && touch /ownership-passed
+RUN --network=none python3 tests/ownership_contract.py && touch /ownership-passed
 
 FROM build AS test
 COPY --from=test-api /api-passed /test-results/
