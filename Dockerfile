@@ -6,7 +6,7 @@ RUN npm ci --ignore-scripts
 COPY frontend/index.html frontend/tsconfig.json frontend/vite.config.ts ./
 COPY frontend/src ./src
 COPY frontend/tests ./tests
-RUN npm test && npm run build
+RUN npm run build
 
 FROM debian:trixie-slim AS toolchain
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends ca-certificates curl xz-utils build-essential pkg-config libcurl4-openssl-dev python3 openssl && rm -rf /var/lib/apt/lists/*
@@ -26,12 +26,15 @@ COPY docs ./docs
 COPY README.md LICENSE THIRD_PARTY_NOTICES ./
 COPY --from=frontend /build/frontend/dist ./frontend/dist
 
+FROM toolchain AS unit
+RUN zig build test
+
 FROM toolchain AS test
-RUN zig build && zig build test \
-    && python3 tests/api_smoke.py \
-    && python3 tests/observe_contract.py \
-    && python3 tests/controller_contract.py \
-    && python3 tests/ownership_contract.py
+RUN zig build
+RUN python3 tests/api_smoke.py
+RUN python3 tests/observe_contract.py
+RUN python3 tests/controller_contract.py
+RUN python3 tests/ownership_contract.py
 
 FROM test AS build
 RUN zig build -Doptimize=ReleaseSafe

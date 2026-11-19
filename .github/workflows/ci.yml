@@ -1,10 +1,12 @@
 name: Test and publish
-on:
+'on':
   push:
-    branches: [main]
-    tags: ['v*']
-  pull_request:
-  workflow_dispatch:
+    branches:
+      - main
+    tags:
+      - v*
+  pull_request: null
+  workflow_dispatch: null
 permissions:
   contents: read
 concurrency:
@@ -14,16 +16,17 @@ jobs:
   security:
     uses: ./.github/workflows/security.yml
     secrets: inherit
-  test:
+  build:
+    name: Runtime build and integration tests
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      - name: Build and test both applications
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069
+      - name: Build runtime and run API/controller integration tests
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
         with:
           context: .
           target: runtime
@@ -31,8 +34,45 @@ jobs:
           tags: prontarr:ci
           no-cache-filters: runtime
           push: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=runtime
+          cache-to: type=gha,scope=runtime,mode=max
+      - name: Export runtime image
+        run: docker save prontarr:ci --output "$RUNNER_TEMP/prontarr-image.tar"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: runtime-image
+          path: ${{ runner.temp }}/prontarr-image.tar
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
+  zig-unit:
+    name: Zig unit tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069
+      - name: Zig unit tests
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
+        with:
+          context: .
+          target: unit
+          push: false
+          cache-from: type=gha,scope=zig-unit
+          cache-to: type=gha,scope=zig-unit,mode=max
+  runtime-smoke:
+    name: Container smoke test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: runtime-image
+          path: ${{ runner.temp }}
+      - name: Load tested runtime image
+        run: docker load --input "$RUNNER_TEMP/prontarr-image.tar"
       - name: Verify the non-root runtime starts
         shell: bash
         run: |
@@ -47,6 +87,19 @@ jobs:
             sleep 1
           done
           exit 1
+    needs:
+      - build
+  syft:
+    name: Syft SBOM
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: runtime-image
+          path: ${{ runner.temp }}
+      - name: Load tested runtime image
+        run: docker load --input "$RUNNER_TEMP/prontarr-image.tar"
       - name: Generate runtime SBOM with Syft
         uses: anchore/sbom-action@73fc65f9f613b4bb1305b6957eddd1217aa991ff
         with:
@@ -55,6 +108,22 @@ jobs:
           format: spdx-json
           output-file: runtime.spdx.json
           upload-release-assets: false
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: runtime-sbom
+          path: runtime.spdx.json
+          retention-days: 14
+          if-no-files-found: error
+    needs:
+      - build
+  grype:
+    name: Grype
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: runtime-sbom
       - name: Scan runtime SBOM with Grype
         if: ${{ !cancelled() }}
         uses: anchore/scan-action@aba84ded01d96bc7ffd9ede169adb6b27e8bc9fb
@@ -65,6 +134,26 @@ jobs:
           only-fixed: true
           output-format: json
           output-file: grype.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: ${{ !cancelled() }}
+        with:
+          name: grype-report
+          path: grype.json
+          retention-days: 14
+          if-no-files-found: error
+    needs:
+      - syft
+  trivy:
+    name: Trivy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: runtime-image
+          path: ${{ runner.temp }}
+      - name: Load tested runtime image
+        run: docker load --input "$RUNNER_TEMP/prontarr-image.tar"
       - name: Scan runtime with Trivy
         if: ${{ !cancelled() }}
         uses: aquasecurity/trivy-action@38b337fff0a2f984d5be173c99e3f633438167ec
@@ -76,6 +165,24 @@ jobs:
           exit-code: '1'
           format: json
           output: trivy.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: ${{ !cancelled() }}
+        with:
+          name: trivy-report
+          path: trivy.json
+          retention-days: 14
+          if-no-files-found: error
+    needs:
+      - build
+  runtime-summary:
+    name: Runtime security summary
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          pattern: '*-report'
+          merge-multiple: true
       - name: Summarize runtime vulnerability findings
         if: ${{ !cancelled() }}
         shell: bash
@@ -107,24 +214,25 @@ jobs:
               out.write(summary)
           print(summary)
           PYREPORT
-      - name: Retain vulnerability reports
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        with:
-          name: runtime-security
-          path: |
-            runtime.spdx.json
-            grype.json
-            trivy.json
-          retention-days: 14
+    needs:
+      - grype
+      - trivy
+    if: ${{ !cancelled() && needs.grype.result != 'skipped' && needs.trivy.result != 'skipped' }}
   publish:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && github.repository_owner == 'JonasBrother97'
-    needs: [test, security]
+    needs:
+      - build
+      - zig-unit
+      - runtime-smoke
+      - syft
+      - grype
+      - trivy
+      - security
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     environment: dockerhub
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
       - name: Check Docker Hub configuration
@@ -136,12 +244,12 @@ jobs:
           [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]] || { echo "Use a semantic version tag such as v0.4.0."; exit 1; }
           test -n "$USERNAME" || { echo "Set the DOCKERHUB_USERNAME repository variable."; exit 1; }
           test -n "$TOKEN" || { echo "Set the DOCKERHUB_TOKEN environment secret."; exit 1; }
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550
         with:
           username: ${{ vars.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+      - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302
         id: metadata
         with:
           images: ${{ vars.DOCKERHUB_USERNAME }}/prontarr
@@ -150,7 +258,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}},enable=${{ !contains(github.ref_name, '-') }}
             type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
       - name: Publish verified image
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
         with:
           context: .
           target: runtime
@@ -158,7 +266,7 @@ jobs:
           push: true
           tags: ${{ steps.metadata.outputs.tags }}
           labels: ${{ steps.metadata.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=runtime
+          cache-to: type=gha,scope=runtime,mode=max
           provenance: true
           sbom: true
