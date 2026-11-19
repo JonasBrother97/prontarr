@@ -1648,3 +1648,13 @@ progress::-moz-progress-bar {
     display: none;
   }
 }
+
+.job-error-code {
+  font-size: 0.8rem;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.filter-controls input[type="search"] {
+  width: 100%;
+  min-width: 0;
+}

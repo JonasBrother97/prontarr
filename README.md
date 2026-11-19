@@ -42,7 +42,7 @@ Reported seeds are an availability hint, not a speed guarantee. Releases must sa
 | Area | What you get |
 | --- | --- |
 | Two-stage planning | Separate initial and final quality profiles, discovered from each Arr API |
-| Persistent jobs | SQLite plans, event history, cancellation and explicit reanalysis |
+| Persistent jobs | Searchable SQLite plan history, status filters, recovery guidance, cancellation and explicit reanalysis |
 | Recovery | Recorded upstream effects, restart protection and exclusive media ownership |
 | Import verification | Native file identities and scope-aware episode checks before advancing |
 | Live visibility | Arr queues, torrent progress, speed, ETA and explained decisions |

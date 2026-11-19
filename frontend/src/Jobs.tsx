@@ -3,6 +3,12 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
 import { useStoredState } from "./preferences";
+import {
+  matchesJob,
+  isJobFilter,
+  jobErrorMessages,
+  type JobFilter,
+} from "./job-utils.ts";
 type Target = {
   app: "radarr" | "sonarr";
   media_id: number;
@@ -13,6 +19,7 @@ type Job = {
   title: string;
   stage: string;
   error_code: string | null;
+  updated_at_ms: number;
   target: Target;
 };
 type Candidate = {
@@ -62,6 +69,12 @@ export function Jobs() {
       value === null ||
       (typeof value === "number" && Number.isSafeInteger(value) && value > 0),
     "session",
+  );
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useStoredState<JobFilter>(
+    "job-filter",
+    "all",
+    isJobFilter,
   );
   const [media, setMedia] = useState("");
   const [episode, setEpisode] = useState("");
@@ -125,6 +138,8 @@ export function Jobs() {
       void cache.invalidateQueries({ queryKey: ["jobs"] });
     },
   });
+  const visibleJobs =
+    jobs.data?.items.filter((job) => matchesJob(job, query, filter)) ?? [];
   const data = detail.data;
   const report = data?.report;
   const selectedCandidates =
@@ -132,8 +147,12 @@ export function Jobs() {
       (c) =>
         c.id === report.compact_candidate_id ||
         c.id === report.upgrade_candidate_id ||
-        report.compact_selections?.some((choice) => choice.candidate_id === c.id) ||
-        report.upgrade_selections?.some((choice) => choice.candidate_id === c.id),
+        report.compact_selections?.some(
+          (choice) => choice.candidate_id === c.id,
+        ) ||
+        report.upgrade_selections?.some(
+          (choice) => choice.candidate_id === c.id,
+        ),
     ) ?? [];
   return (
     <section className="jobs-page">
@@ -214,10 +233,55 @@ export function Jobs() {
       )}
       <div className="card">
         <h2>{t("Saved history")}</h2>
+        <div className="filter-controls">
+          <label>
+            {t("Search plans")}
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={t("Title or application")}
+            />
+          </label>
+          <label>
+            {t("Status")}
+            <select
+              value={filter}
+              onChange={(event) => {
+                if (isJobFilter(event.target.value))
+                  setFilter(event.target.value);
+              }}
+            >
+              <option value="all">{t("All plans")}</option>
+              <option value="active">{t("Active plans")}</option>
+              <option value="attention">{t("Needs attention")}</option>
+              <option value="finished">{t("Finished plans")}</option>
+            </select>
+          </label>
+          <span className="result-count" role="status">
+            {t("{{shown}} of {{total}} plans", {
+              shown: visibleJobs.length,
+              total: jobs.data?.items.length ?? 0,
+            })}
+          </span>
+        </div>
         {jobs.isPending ? (
           <p>{t("Loading plans…")}</p>
         ) : !jobs.data?.items.length ? (
           <p>{t("No plans yet.")}</p>
+        ) : !visibleJobs.length ? (
+          <p>
+            {t("No plans match these filters.")}{" "}
+            <button
+              className="secondary"
+              onClick={() => {
+                setQuery("");
+                setFilter("all");
+              }}
+            >
+              {t("Clear filters")}
+            </button>
+          </p>
         ) : (
           <div className="table-scroll">
             <table>
@@ -226,15 +290,26 @@ export function Jobs() {
                   <th>{t("Title")}</th>
                   <th>{t("Application")}</th>
                   <th>{t("Stage")}</th>
+                  <th>{t("Last updated")}</th>
                   <th></th>
                 </tr>
               </thead>
               <tbody>
-                {jobs.data.items.map((j) => (
+                {visibleJobs.map((j) => (
                   <tr key={j.id}>
                     <td>{j.title}</td>
                     <td>{j.target.app}</td>
-                    <td>{t(stages[j.stage] ?? j.stage)}</td>
+                    <td>
+                      {t(stages[j.stage] ?? j.stage)}
+                      {j.error_code && (
+                        <div className="job-error-code">{j.error_code}</div>
+                      )}
+                    </td>
+                    <td>
+                      <time dateTime={new Date(j.updated_at_ms).toISOString()}>
+                        {new Date(j.updated_at_ms).toLocaleString(locale())}
+                      </time>
+                    </td>
                     <td>
                       <button
                         className="secondary"
@@ -260,8 +335,12 @@ export function Jobs() {
           </p>
           {data.job.error_code && (
             <p className="error" role="alert">
-              {data.job.error_code}
-              {t(". Review is required before execution can continue.")}
+              {t(
+                jobErrorMessages[data.job.error_code] ??
+                  "Review is required before execution can continue. Check the event history for details.",
+              )}
+              <br />
+              <code>{data.job.error_code}</code>
             </p>
           )}
           <div className="job-actions">
@@ -347,7 +426,10 @@ export function Jobs() {
             selectedCandidates.map((c) => (
               <div className="candidate-choice" key={c.id}>
                 <strong>
-                  {c.id === report?.compact_candidate_id || report?.compact_selections?.some((choice) => choice.candidate_id === c.id)
+                  {c.id === report?.compact_candidate_id ||
+                  report?.compact_selections?.some(
+                    (choice) => choice.candidate_id === c.id,
+                  )
                     ? t("First copy")
                     : "Upgrade"}
                 </strong>

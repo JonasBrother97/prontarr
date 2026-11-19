@@ -1072,7 +1072,11 @@ function SimulatorForm({
             ))}
           </section>
           <ErrorNotice error={simulate.error} />
-          <button type="submit" className="primary" disabled={simulate.isPending}>
+          <button
+            type="submit"
+            className="primary"
+            disabled={simulate.isPending}
+          >
             <FlaskConical size={17} />
             {simulate.isPending ? t("Evaluating…") : t("Simulate decision")}
           </button>
