@@ -1,8 +1,8 @@
 import { t, locale } from "./i18n.ts";
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./api";
-import { useStoredState, isShortText } from "./preferences";
+import { useStoredState, isShortText, jobIdFromHash } from "./preferences";
 import {
   sortJobs,
   isJobSort,
@@ -66,16 +66,22 @@ const stages: Record<string, string> = {
   review: "Needs attention",
   cancelled: "Cancelled",
 };
+function subscribeToHash(change: () => void) {
+  window.addEventListener("hashchange", change);
+  return () => window.removeEventListener("hashchange", change);
+}
+
+function currentHash() {
+  return window.location.hash;
+}
+
 export function Jobs() {
   const cache = useQueryClient();
-  const [selected, setSelected] = useStoredState<number | null>(
-    "selected-job",
-    null,
-    (value): value is number | null =>
-      value === null ||
-      (typeof value === "number" && Number.isSafeInteger(value) && value > 0),
-    "session",
-  );
+  const hash = useSyncExternalStore(subscribeToHash, currentHash);
+  const selected = jobIdFromHash(hash);
+  function setSelected(id: number) {
+    window.location.hash = `#/jobs/${id}`;
+  }
   const [query, setQuery] = useStoredState(
     "job-search",
     "",
@@ -411,6 +417,9 @@ export function Jobs() {
           </div>
         )}
       </div>
+      {hash.startsWith("#/jobs/") && selected === null && (
+        <p role="alert">{t("Invalid plan link.")}</p>
+      )}
       {selected !== null && detail.isPending && (
         <p role="status">{t("Loading plan details…")}</p>
       )}

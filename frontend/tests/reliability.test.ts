@@ -5,6 +5,7 @@ import {
   restorePreference,
   savePreference,
   pageFromHash,
+  jobIdFromHash,
 } from "../src/preferences.ts";
 import {
   matchesStatus,
@@ -59,6 +60,20 @@ test("deep links restore supported pages and reject unknown routes", () => {
   assert.equal(pageFromHash("#/simulator"), "simulator");
   assert.equal(pageFromHash("#/overview"), "dashboard");
   assert.equal(pageFromHash("#/untrusted"), "live");
+});
+test("plan links route to Jobs and accept only safe positive IDs", () => {
+  assert.equal(pageFromHash("#/jobs/42"), "jobs");
+  assert.equal(jobIdFromHash("#/jobs/42"), 42);
+  for (const hash of [
+    "#/jobs",
+    "#/jobs/0",
+    "#/jobs/-1",
+    "#/jobs/1/2",
+    "#/jobs/9007199254740992",
+    "#/jobs/1?token=example",
+    "#/jobs/%31",
+  ])
+    assert.equal(jobIdFromHash(hash), null);
 });
 const paused = {
   name: "Episode 10",

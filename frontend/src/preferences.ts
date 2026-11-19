@@ -70,7 +70,15 @@ export const routes: Record<Page, string> = {
   simulator: "#/simulator",
   policy: "#/settings",
 };
+export function jobIdFromHash(hash: string): number | null {
+  const match = /^#\/jobs\/([1-9][0-9]{0,15})$/.exec(hash);
+  if (!match) return null;
+  const id = Number(match[1]);
+  return Number.isSafeInteger(id) ? id : null;
+}
+
 export function pageFromHash(hash: string): Page {
+  if (hash.startsWith("#/jobs/")) return "jobs";
   return (
     (Object.keys(routes) as Page[]).find((page) => routes[page] === hash) ??
     "live"
