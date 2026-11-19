@@ -28,21 +28,49 @@ FROM toolchain AS build
 COPY --from=frontend /build/frontend/dist ./frontend/dist
 RUN zig build -Doptimize=ReleaseSafe -Dcpu=baseline
 
-FROM build AS test
+# Each test stage has its own loopback network and temporary database.
+# BuildKit can run these stages concurrently after the shared compilation.
+FROM build AS test-fixtures
 COPY tests ./tests
 COPY integrations ./integrations
 COPY docs/example-input.json ./docs/example-input.json
-RUN python3 tests/api_smoke.py
-RUN python3 tests/observe_contract.py
-RUN python3 tests/controller_contract.py
-RUN python3 tests/ownership_contract.py
+
+FROM test-fixtures AS test-api
+RUN python3 tests/api_smoke.py && touch /api-passed
+
+FROM test-fixtures AS test-observe
+RUN python3 tests/observe_contract.py && touch /observe-passed
+
+FROM test-fixtures AS test-controller-a
+RUN python3 tests/controller_shard.py 0 3 && touch /controller-a-passed
+
+FROM test-fixtures AS test-controller-b
+RUN python3 tests/controller_shard.py 1 3 && touch /controller-b-passed
+
+FROM test-fixtures AS test-controller-c
+RUN python3 tests/controller_shard.py 2 3 && touch /controller-c-passed
+
+FROM test-fixtures AS test-ownership
+RUN python3 tests/ownership_contract.py && touch /ownership-passed
+
+FROM build AS test
+COPY --from=test-api /api-passed /test-results/
+COPY --from=test-observe /observe-passed /test-results/
+COPY --from=test-controller-a /controller-a-passed /test-results/
+COPY --from=test-controller-b /controller-b-passed /test-results/
+COPY --from=test-controller-c /controller-c-passed /test-results/
+COPY --from=test-ownership /ownership-passed /test-results/
+RUN test -f /test-results/api-passed && test -f /test-results/observe-passed \
+    && test -f /test-results/controller-a-passed && test -f /test-results/controller-b-passed \
+    && test -f /test-results/controller-c-passed && test -f /test-results/ownership-passed \
+    && cp /build/zig-out/bin/prontarr /prontarr-tested
 
 FROM debian:trixie-slim AS runtime
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends ca-certificates libcurl4t64 curl \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 10001 prontarr && useradd --uid 10001 --gid prontarr --no-create-home prontarr \
     && mkdir /data && chown prontarr:prontarr /data
-COPY --from=test /build/zig-out/bin/prontarr /usr/local/bin/prontarr
+COPY --from=test /prontarr-tested /usr/local/bin/prontarr
 COPY LICENSE THIRD_PARTY_NOTICES /usr/share/licenses/prontarr/
 LABEL org.opencontainers.image.title="Prontarr" \
       org.opencontainers.image.description="A watchable copy now. A better one later." \
