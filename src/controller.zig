@@ -28,7 +28,7 @@ pub const State = struct {
     compact_sent_at_ms: i64 = 0,
     upgrade_sent_at_ms: i64 = 0,
 };
-pub const Summary = struct { id: i64, target: P.Ref, title: []const u8, stage: Stage, error_code: ?[]const u8, created_at_ms: i64, updated_at_ms: i64, compact_hash: ?[]const u8, upgrade_hash: ?[]const u8 };
+pub const Summary = struct { id: i64, target: P.Ref, title: []const u8, stage: Stage, external_handoff: bool = false, error_code: ?[]const u8, created_at_ms: i64, updated_at_ms: i64, compact_hash: ?[]const u8, upgrade_hash: ?[]const u8 };
 pub const Event = struct { id: i64, kind: []const u8, detail: []const u8, created_at: []const u8 };
 pub const Runtime = struct {
     io: std.Io,
@@ -140,12 +140,14 @@ pub const Runtime = struct {
     pub fn summaries(self: *Runtime, a: A) ![]const Summary {
         const db = try self.pool.acquire(self.io);
         defer self.pool.release(self.io, db);
-        var rows = try db.rows("SELECT id,state FROM live_jobs WHERE json_extract(state,'$.stage') IN ('queued','analyzing','claiming','compact','upgrading') OR cancel_requested=1 OR id IN (SELECT id FROM live_jobs ORDER BY id DESC LIMIT 100) ORDER BY id DESC", .{});
+        var rows = try db.rows("SELECT id,state,CASE WHEN json_extract(state,'$.stage') = 'cancelled' THEN coalesce((SELECT kind = 'external_handoff' FROM live_events WHERE job_id=live_jobs.id ORDER BY id DESC LIMIT 1),0) ELSE 0 END FROM live_jobs WHERE json_extract(state,'$.stage') IN ('queued','analyzing','claiming','compact','upgrading') OR cancel_requested=1 OR id IN (SELECT id FROM live_jobs ORDER BY id DESC LIMIT 100) ORDER BY id DESC", .{});
         defer rows.deinit();
         var list: std.ArrayList(Summary) = .empty;
         while (rows.next()) |row| {
             const state = try std.json.parseFromSliceLeaky(State, a, row.text(1), .{ .allocate = .alloc_always });
-            try list.append(a, summary(row.int(0), state));
+            var item = summary(row.int(0), state);
+            item.external_handoff = row.int(2) != 0;
+            try list.append(a, item);
         }
         if (rows.err) |err| return err;
         return list.items;
@@ -708,6 +710,7 @@ pub fn migrate(conn: DB.Conn) !void {
     try conn.execNoArgs(
         \\CREATE TABLE IF NOT EXISTS live_jobs(id INTEGER PRIMARY KEY,request_key TEXT UNIQUE NOT NULL,state TEXT NOT NULL,cancel_requested INTEGER NOT NULL DEFAULT 0);
         \\CREATE TABLE IF NOT EXISTS live_events(id INTEGER PRIMARY KEY,job_id INTEGER NOT NULL,kind TEXT NOT NULL,detail TEXT NOT NULL,created_at TEXT NOT NULL DEFAULT(strftime('%Y-%m-%dT%H:%M:%fZ','now')));
+        \\CREATE INDEX IF NOT EXISTS live_events_job_id ON live_events(job_id,id);
         \\CREATE TABLE IF NOT EXISTS live_effects(id INTEGER PRIMARY KEY,job_id INTEGER NOT NULL,effect_key TEXT NOT NULL,kind TEXT NOT NULL,status TEXT NOT NULL,UNIQUE(job_id,effect_key));
         \\CREATE TABLE IF NOT EXISTS live_ownership(app TEXT NOT NULL,media_id INTEGER NOT NULL,job_id INTEGER NOT NULL,PRIMARY KEY(app,media_id));
         \\CREATE TABLE IF NOT EXISTS intake_seen(app TEXT NOT NULL,media_id INTEGER NOT NULL,hash TEXT NOT NULL,job_id INTEGER,PRIMARY KEY(app,media_id,hash));

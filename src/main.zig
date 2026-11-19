@@ -310,7 +310,10 @@ fn createLiveJob(app: *App, req: *httpz.Request, res: *httpz.Response) !void {
 fn liveJob(app: *App, req: *httpz.Request, res: *httpz.Response) !void {
     const id = jobId(req) catch return failure(res, 400, "Invalid ID.");
     const state = app.controller.load(res.arena, id) catch return failure(res, 404, "Plan not found.");
-    try res.json(.{ .job = controller.summary(id, state), .report = if (state.analysis) |value| value.report else null, .events = try app.controller.events(res.arena, id), .execution_allowed = app.controller.allowed(state.target) }, .{});
+    const events = try app.controller.events(res.arena, id);
+    var job = controller.summary(id, state);
+    job.external_handoff = state.stage == .cancelled and events.len > 0 and std.mem.eql(u8, events[0].kind, "external_handoff");
+    try res.json(.{ .job = job, .report = if (state.analysis) |value| value.report else null, .events = events, .execution_allowed = app.controller.allowed(state.target) }, .{});
 }
 fn startLiveJob(app: *App, req: *httpz.Request, res: *httpz.Response) !void {
     const id = jobId(req) catch return failure(res, 400, "Invalid ID.");

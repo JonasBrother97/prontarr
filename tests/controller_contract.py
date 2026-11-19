@@ -158,7 +158,7 @@ class ControllerContract(unittest.TestCase):
         self.wait_stage(id,'compact')
         recovered=request(f'/api/jobs/{id}')[1]
         self.assertIsNone(recovered['job']['error_code'])
-        request(f'/api/jobs/{id}/cancel',{});self.wait_stage(id,'cancelled')
+        request(f'/api/jobs/{id}/cancel',{});self.assertFalse(self.wait_stage(id,'cancelled')['job']['external_handoff'])
         self.assertFalse(Upstream.owner)
     def test_ownership_conflict_prevents_grab(self):
         id=self.plan();Upstream.conflict=True;request(f'/api/jobs/{id}/start',{})
@@ -231,6 +231,8 @@ class ControllerContract(unittest.TestCase):
         self.assertEqual(Upstream.grabs,['compact'])
         self.assertEqual(Upstream.controls,['stop','start'])
         self.assertTrue(any(e['kind']=='external_handoff' for e in detail['events']))
+        self.assertTrue(detail['job']['external_handoff'])
+        self.assertTrue(next(j for j in request('/api/jobs')[1]['items'] if j['id']==id)['external_handoff'])
         with sqlite3.connect(self.folder/'db.sqlite') as db:
             self.assertEqual(db.execute('select count(*) from live_ownership').fetchone()[0],0)
             self.assertEqual(db.execute('select count(*) from intake_seen where hash=?',('e'*40,)).fetchone()[0],1)

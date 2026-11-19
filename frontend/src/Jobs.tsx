@@ -23,6 +23,7 @@ type Job = {
   id: number;
   title: string;
   stage: string;
+  external_handoff?: boolean;
   error_code: string | null;
   updated_at_ms: number;
   target: Target;
@@ -380,7 +381,11 @@ export function Jobs() {
                     <td>{j.title}</td>
                     <td>{j.target.app}</td>
                     <td>
-                      {t(stages[j.stage] ?? j.stage)}
+                      {t(
+                        j.external_handoff
+                          ? "Handed off to another app"
+                          : (stages[j.stage] ?? j.stage),
+                      )}
                       {j.error_code && (
                         <div className="job-error-code">{j.error_code}</div>
                       )}
@@ -413,8 +418,12 @@ export function Jobs() {
         <div className="card job-detail">
           <h2>{data.job.title}</h2>
           <p>
-            {t(stages[data.job.stage] ?? data.job.stage)} ·{" "}
-            {report?.profile_name}
+            {t(
+              data.job.external_handoff
+                ? "Handed off to another app"
+                : (stages[data.job.stage] ?? data.job.stage),
+            )}{" "}
+            · {report?.profile_name}
           </p>
           {data.job.error_code && (
             <p className="error" role="alert">
