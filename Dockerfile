@@ -5,7 +5,6 @@ COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci --ignore-scripts
 COPY frontend/index.html frontend/tsconfig.json frontend/vite.config.ts ./
 COPY frontend/src ./src
-COPY frontend/tests ./tests
 RUN npm run build
 
 FROM debian:trixie-slim AS toolchain
@@ -20,31 +19,30 @@ ENV PATH="/opt/zig:${PATH}"
 WORKDIR /build
 COPY build.zig build.zig.zon ./
 COPY src ./src
-COPY tests ./tests
-COPY integrations ./integrations
-COPY docs ./docs
-COPY README.md LICENSE THIRD_PARTY_NOTICES ./
-COPY --from=frontend /build/frontend/dist ./frontend/dist
-
+# Unit tests depend only on Zig source, not on frontend bundles or documentation.
 FROM toolchain AS unit
 RUN zig build test
 
-FROM toolchain AS test
-RUN zig build
+# Compile the shipped binary once, then test that exact optimized executable.
+FROM toolchain AS build
+COPY --from=frontend /build/frontend/dist ./frontend/dist
+RUN zig build -Doptimize=ReleaseSafe
+
+FROM build AS test
+COPY tests ./tests
+COPY integrations ./integrations
+COPY docs/example-input.json ./docs/example-input.json
 RUN python3 tests/api_smoke.py
 RUN python3 tests/observe_contract.py
 RUN python3 tests/controller_contract.py
 RUN python3 tests/ownership_contract.py
-
-FROM test AS build
-RUN zig build -Doptimize=ReleaseSafe
 
 FROM debian:trixie-slim AS runtime
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends ca-certificates libcurl4t64 curl \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 10001 prontarr && useradd --uid 10001 --gid prontarr --no-create-home prontarr \
     && mkdir /data && chown prontarr:prontarr /data
-COPY --from=build /build/zig-out/bin/prontarr /usr/local/bin/prontarr
+COPY --from=test /build/zig-out/bin/prontarr /usr/local/bin/prontarr
 COPY LICENSE THIRD_PARTY_NOTICES /usr/share/licenses/prontarr/
 LABEL org.opencontainers.image.title="Prontarr" \
       org.opencontainers.image.description="A watchable copy now. A better one later." \

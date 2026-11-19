@@ -53,3 +53,5 @@ All required gates → Version-tag publication
 ```
 
 Unit tests have separate checks from integration tests and scanner jobs. Compiler/toolchain setup time is included in job duration; it is not the unit-test execution time. Docker integration suites use separate build steps to make each suite visible in BuildKit logs. Cache scopes for the Zig unit job and runtime build are independent so parallel cache exports do not overwrite each other.
+
+The Docker build compiles the optimized runtime binary once and runs integration contracts against that same binary. Unit tests do not depend on frontend bundles, and README/documentation changes do not invalidate backend compilation. Only the synthetic API fixture enters the integration stage.
