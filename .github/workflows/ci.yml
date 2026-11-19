@@ -5,7 +5,8 @@ name: Test and publish
       - main
     tags:
       - v*
-  pull_request: null
+  pull_request:
+    branches: [main]
   workflow_dispatch: null
 permissions:
   contents: read
@@ -235,6 +236,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+          fetch-depth: 0
+      - name: Verify release belongs to trunk
+        env:
+          RELEASE_COMMIT: ${{ github.sha }}
+        run: |
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          git merge-base --is-ancestor "$RELEASE_COMMIT" origin/main || {
+            echo "Release tags must reference a commit integrated into main."
+            exit 1
+          }
       - name: Check Docker Hub configuration
         env:
           TAG: ${{ github.ref_name }}

@@ -114,7 +114,7 @@ make test
 
 Tests use temporary databases and mock upstream services. They do not contact a real media library. The API suites bind port 5882; stop another local instance before running them.
 
-Bug reports should include the version, expected behavior and redacted reproduction details. Feature requests and pull requests are welcome. Never attach API keys, connection files, private library databases or raw download logs containing credentials.
+Bug reports should include the version, expected behavior and redacted reproduction details. Feature requests and pull requests are welcome. We use [trunk-based development](CONTRIBUTING.md), with `main` as the single integration branch and version tags for releases. Never attach API keys, connection files, private library databases or raw download logs containing credentials.
 
 CI checks code, dependencies, Git history and the runtime image. See [the security guide](docs/security-ci.md) for individual tools, severity gates and optional SonarQube setup. Passing scans does not establish complete coverage of Zig or bundled native code.
 

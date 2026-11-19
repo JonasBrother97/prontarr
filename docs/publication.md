@@ -4,7 +4,7 @@ Target repository: `JonasBrother97/prontarr`. License: MIT. Corporate GitHub acc
 
 ## CI
 
-The GitHub Actions workflow runs on pull requests, pushes to `main`, version tags and manual dispatch. Its Docker test stage runs frontend tests/build, Zig unit tests, API contracts, observation contracts, controller lifecycle and ownership tests. Builds use Zig 0.17.1 with its official SHA-256 checksum and the committed npm lockfile. Actions are pinned to reviewed upstream commit SHAs.
+The GitHub Actions workflow runs on pull requests, pushes to `main`, version tags and manual dispatch. Independent jobs run frontend and Zig unit tests, source checks, runtime builds and image scans. The Docker integration stage runs API contracts, observation contracts, controller lifecycle and ownership tests. Builds use Zig 0.17.1 with its official SHA-256 checksum and the committed npm lockfile. Actions are pinned to reviewed upstream commit SHAs.
 
 The container currently targets **linux/amd64**. The runtime uses a non-root UID/GID of 10001, stores SQLite under `/data`, and does not contain Node, compilers, API keys or local connections. The Docker context uses an allowlist and excludes Git history, databases, environment files, caches and private runtime configuration.
 
@@ -23,7 +23,7 @@ Before publishing, configure:
 - Repository variable `DOCKERHUB_USERNAME` with the destination Docker Hub user.
 - Actions secret `DOCKERHUB_TOKEN`, a Docker Hub access token with write permission for the intended namespace. It can be a repository secret or a secret in the `dockerhub` environment.
 
-Create/push a semantic version tag such as `v0.4.0`. Only successful tests on version-tag pushes from `JonasBrother97` can publish. Main branch pushes and pull requests build/test but never publish. Release images are tagged with the full version and major/minor version; stable versions also get `latest`. The workflow requests provenance and SBOM attestations. Missing publishing credentials fail with a clear configuration error without exposing secrets.
+Follow the [trunk-based contribution flow](../CONTRIBUTING.md): integrate into `main`, let CI pass, then create/push a semantic version tag such as `v0.4.0` on that trunk commit. Publication rejects tags whose commits are not in `main` history. Only successful tests on version-tag pushes from `JonasBrother97` can publish. Main branch pushes and pull requests build/test but never publish. Release images are tagged with the full version and major/minor version; stable versions also get `latest`. The workflow requests provenance and SBOM attestations. Missing publishing credentials fail with a clear configuration error without exposing secrets.
 
 The CI Docker test build passed on GitHub. CI also builds the final runtime image and checks its health endpoint, non-root UID and disabled-by-default execution before release. Local Docker builds need a running Docker daemon.
 
