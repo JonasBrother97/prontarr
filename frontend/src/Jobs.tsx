@@ -574,7 +574,15 @@ export function Jobs() {
             {data.events.map((e) => (
               <li key={e.id}>
                 <time>{new Date(e.created_at).toLocaleString(locale())}</time>
-                <p>{t(e.detail)}</p>
+                <p>
+                  {[
+                    "analysis_failed",
+                    "needs_review",
+                    "waiting_external",
+                  ].includes(e.kind)
+                    ? t(jobErrorMessages[e.detail] ?? e.detail)
+                    : t(e.detail)}
+                </p>
               </li>
             ))}
           </ol>

@@ -358,5 +358,9 @@
   "Could not load plan history. Use Refresh plans to try again.": "Could not load plan history. Use Refresh plans to try again.",
   "Loading plan details…": "Loading plan details…",
   "These plan details could not be refreshed. Actions are disabled until a successful refresh.": "These plan details could not be refreshed. Actions are disabled until a successful refresh.",
-  "Download an eligible upgrade alongside the first copy": "Download an eligible upgrade alongside the first copy"
+  "Download an eligible upgrade alongside the first copy": "Download an eligible upgrade alongside the first copy",
+  "External download detected; restoring the original needs attention.": "External download detected; restoring the original needs attention.",
+  "Another app changed this download. Prontarr released control and preserved the replacement; native cleanup and upgrades remain enabled.": "Another app changed this download. Prontarr released control and preserved the replacement; native cleanup and upgrades remain enabled.",
+  "The existing compact download was adopted without another grab.": "The existing compact download was adopted without another grab.",
+  "A library copy is already available; native upgrades remain unchanged.": "A library copy is already available; native upgrades remain unchanged."
 }
