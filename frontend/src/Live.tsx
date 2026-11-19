@@ -10,7 +10,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { api } from "./api";
-import { useStoredState, isShortText } from "./preferences";
+import { useStoredState, isShortText, isBoolean } from "./preferences";
 import {
   isView,
   isStatusFilter,
@@ -141,7 +141,11 @@ export function Live() {
     isSortOrder,
     "session",
   );
-  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useStoredState(
+    "download-auto-refresh",
+    true,
+    isBoolean,
+  );
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 15_000);
