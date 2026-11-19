@@ -335,7 +335,7 @@ function App() {
               ? t("System unavailable")
               : t("Connecting…")}
           <small>
-            {t("v{{version}} · Alpha", { version: "0.4.0-alpha.3" })}
+            {t("v{{version}} · Alpha", { version: "0.4.0-alpha.4" })}
           </small>
         </div>
       </aside>

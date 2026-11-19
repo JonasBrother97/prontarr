@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0-alpha.4 — Plan navigation and refresh safeguards
 
 - Filter plan history by application and sort by title or update time.
 - Preserve search within the browser session and remember history preferences.
