@@ -14,7 +14,8 @@ Add these fields to a private connections file (mode 0600), alongside the Arr an
     "standalone": true,
     "automatic": true,
     "allowed_movie_ids": [48],
-    "allowed_series_ids": [9]
+    "allowed_series_ids": [9],
+    "download_removal_grace_seconds": 120
   }
 }
 ```
@@ -74,6 +75,8 @@ Jobs retain their policy snapshot. Saving defaults affects new jobs; **Reanalyze
 Prontarr does not disable Cleanuparr, change Arr quality profiles, or add exclusion tags to torrents. Its standalone ownership table only prevents competing Prontarr plans; it does not lock other apps.
 
 Before submitting a release and while following a running plan, Prontarr rechecks the native Arr queue. If another app introduces a different download for the same movie or selected episode, Prontarr cancels its own plan, releases its internal ownership and restores only an original it previously paused. It leaves the replacement untouched and records its hash so automatic intake does not immediately take it over again. Other episodes are evaluated independently when their scope is known.
+
+An expected torrent that disappears from both the Arr queue and qBittorrent starts a removal grace period. Configure it with the positive integer `execution.download_removal_grace_seconds` (default 120). Prontarr checks Arr import history and the current library before confirming removal. The grace period survives a restart. On confirmed removal, Prontarr releases ownership and leaves the library and remaining torrents untouched. Automatic intake leaves that media scope to Arr until the plan is explicitly reanalyzed.
 
 This is a conservative handoff, not a distributed transaction with other apps: another controller can still change a queue between the check and the Arr request. Ambiguous queue scope requires review, and uncertain requests remain protected against blind retries. Removing a torrent does not authorize Prontarr to recreate it automatically. Native import/replacement and cleanup remain the responsibility of Arr and Cleanuparr.
 

@@ -7,6 +7,12 @@ const E = @import("engine.zig");
 const C = @import("curl");
 const A = std.mem.Allocator;
 pub const Stage = enum { queued, analyzing, ready, claiming, compact, upgrading, completed, review, cancelled };
+const Download = struct {
+    hash: []const u8,
+    episode_id: ?i64 = null,
+    compact: bool = false,
+    missing_since_ms: ?i64 = null,
+};
 pub const State = struct {
     generation: i64 = 1,
     automatic: bool = false,
@@ -20,6 +26,8 @@ pub const State = struct {
     upgrade_hash: ?[]const u8 = null,
     upgrade_selection_ids: []const []const u8 = &.{},
     original_stopped: bool = false,
+    downloads: []Download = &.{},
+    removal_confirmed: bool = false,
     baseline: []const P.FileState = &.{},
     error_code: ?[]const u8 = null,
     cancel_requested: bool = false,
@@ -125,6 +133,8 @@ pub const Runtime = struct {
         state.baseline = &.{};
         state.upgrade_selection_ids = &.{};
         state.adopt_original = false;
+        state.downloads = &.{};
+        state.removal_confirmed = false;
         state.generation += 1;
         try self.save(a, id, &state, "analysis_requested", "New analysis requested with current default profiles and limits.");
     }
@@ -183,6 +193,11 @@ pub const Runtime = struct {
         for (0..jobs.len) |index| {
             const job = jobs[(index + offset) % jobs.len];
             var state = try self.load(a, job.id);
+            if (state.removal_confirmed and (state.stage == .compact or state.stage == .upgrading)) {
+                self.last_job_id = job.id;
+                try self.finishRemoval(a, job.id, &state);
+                return;
+            }
             if (state.cancel_requested) {
                 self.last_job_id = job.id;
                 try self.compensate(a, job.id, &state);
@@ -290,7 +305,7 @@ pub const Runtime = struct {
                         row.deinit();
                         continue;
                     }
-                    if (try db.row("SELECT 1 FROM live_jobs WHERE json_extract(state,'$.target.app')=?1 AND json_extract(state,'$.target.media_id')=?2 AND (json_extract(state,'$.stage') IN ('queued','analyzing','claiming','compact','upgrading') OR json_extract(state,'$.token') IS NOT NULL)", .{ @tagName(app), mid })) |row| {
+                    if (try db.row("SELECT 1 FROM live_jobs WHERE json_extract(state,'$.target.app')=?1 AND json_extract(state,'$.target.media_id')=?2 AND (json_extract(state,'$.stage') IN ('queued','analyzing','claiming','compact','upgrading') OR json_extract(state,'$.token') IS NOT NULL OR json_extract(state,'$.removal_confirmed') = 1)", .{ @tagName(app), mid })) |row| {
                         row.deinit();
                         continue;
                     }
@@ -411,11 +426,13 @@ pub const Runtime = struct {
         try self.restoreOriginal(a, id, state);
         if (state.token != null) try self.coordinator(a, id, state, true);
     }
-    fn queueHash(self: *Runtime, a: A, state: State, title: []const u8) !?[]const u8 {
+    fn queueHash(self: *Runtime, a: A, state: State, title: []const u8, episode_id: ?i64) !?[]const u8 {
         const queue = try P.get(a, try P.connection(self.config, state.target.app), "/api/v3/queue?page=1&pageSize=1000");
         for (J.items(queue, "records")) |record| {
-            const mid = J.num(record, if (state.target.app == .radarr) "movieId" else "seriesId");
-            if (mid != state.target.media_id) continue;
+            if (!queueRecordInScope(state, record)) continue;
+            if (episode_id) |episode| {
+                if ((J.num(record, "episodeId") orelse episode) != episode) continue;
+            }
             if (std.mem.eql(u8, J.str(record, "title") orelse "", title)) return J.str(record, "downloadId");
         }
         return null;
@@ -423,6 +440,9 @@ pub const Runtime = struct {
     fn queueRecordOwned(self: *Runtime, a: A, id: i64, state: State, record: J.Value, hash: []const u8) !bool {
         for ([_]?[]const u8{ state.target.original_hash, state.compact_hash, state.upgrade_hash }) |known| {
             if (known) |value| if (std.ascii.eqlIgnoreCase(value, hash)) return true;
+        }
+        for (state.downloads) |tracked| {
+            if (std.ascii.eqlIgnoreCase(tracked.hash, hash)) return true;
         }
         // Episode plans can have several compact hashes. Match each queue entry to
         // a journaled request, not merely to an old release-search candidate.
@@ -455,9 +475,9 @@ pub const Runtime = struct {
         }
         return true;
     }
-    fn respectExternalQueue(self: *Runtime, a: A, id: i64, state: State) !void {
+    fn respectExternalQueue(self: *Runtime, a: A, id: i64, state: State) !J.Value {
         const queue = try P.get(a, try P.connection(self.config, state.target.app), "/api/v3/queue?page=1&pageSize=1000");
-        if ((J.num(queue, "totalRecords") orelse 1001) > 1000) return error.QueueScopeUnknown;
+        if ((J.num(queue, "totalRecords") orelse 1001) > 1000 or J.field(queue, "records") != .array) return error.QueueScopeUnknown;
         var external = false;
         for (J.items(queue, "records")) |record| {
             if (!queueRecordInScope(state, record)) continue;
@@ -472,6 +492,104 @@ pub const Runtime = struct {
             external = true;
         }
         if (external) return error.ExternalDownloadDetected;
+        return queue;
+    }
+    fn trackDownload(a: A, state: *State, download: Download) !void {
+        if (!J.validHash(download.hash)) return;
+        for (state.downloads) |*tracked| {
+            if (tracked.episode_id != download.episode_id or tracked.compact != download.compact) continue;
+            if (!std.ascii.eqlIgnoreCase(tracked.hash, download.hash)) tracked.* = download;
+            return;
+        }
+        var downloads: std.ArrayList(Download) = .fromOwnedSlice(state.downloads);
+        try downloads.append(a, download);
+        state.downloads = downloads.items;
+    }
+    fn matchesHash(records: []const J.Value, field: []const u8, hash: []const u8) bool {
+        for (records) |record| {
+            if (std.ascii.eqlIgnoreCase(J.str(record, field) orelse "", hash)) return true;
+        }
+        return false;
+    }
+    fn downloadInScope(state: State, record: J.Value, download: Download) bool {
+        if (!std.ascii.eqlIgnoreCase(J.str(record, "downloadId") orelse "", download.hash)) return false;
+        if (!queueRecordInScope(state, record)) return false;
+        if (download.episode_id) |episode| return (J.num(record, "episodeId") orelse episode) == episode;
+        return true;
+    }
+    fn importRecorded(self: *Runtime, a: A, state: State, download: Download) !bool {
+        const conn = try P.connection(self.config, state.target.app);
+        // Arr exposes qBittorrent IDs in upper case, while qBittorrent uses lower case.
+        const download_id = try std.ascii.allocUpperString(a, download.hash);
+        const path = try std.fmt.allocPrint(a, "/api/v3/history?page=1&pageSize=20&sortKey=date&sortDirection=descending&downloadId={s}", .{download_id});
+        const history = try P.get(a, conn, path);
+        const records = J.field(history, "records");
+        if (records != .array) return error.InvalidUpstreamResponse;
+        for (J.array(records)) |record| {
+            if (!downloadInScope(state, record, download)) continue;
+            const event = J.str(record, "eventType") orelse continue;
+            return std.mem.eql(u8, event, "downloadFolderImported");
+        }
+        return false;
+    }
+    fn finishRemoval(self: *Runtime, a: A, id: i64, state: *State) !void {
+        if (state.token != null) try self.coordinator(a, id, state, true);
+        state.original_stopped = false;
+        state.stage = .cancelled;
+        state.cancel_requested = false;
+        state.error_code = null;
+        try self.save(a, id, state, "external_handoff", "An expected download disappeared. Prontarr released ownership and preserved existing copies.");
+    }
+    fn reconcileRemoval(self: *Runtime, a: A, id: i64, state: *State, queue: J.Value, current: []const P.FileState) !bool {
+        // Recover known hashes for plans created before per-download tracking.
+        if (state.downloads.len == 0) {
+            if (!state.adopt_original) {
+                if (state.compact_hash) |hash| try trackDownload(a, state, .{ .hash = hash, .compact = true });
+            }
+            if (!usesOriginal(state.*)) {
+                if (state.upgrade_hash) |hash| try trackDownload(a, state, .{ .hash = hash });
+            }
+        }
+        if (state.target.original_hash) |hash| try trackDownload(a, state, .{ .hash = hash, .compact = state.adopt_original });
+        const now = std.Io.Timestamp.now(self.io, .real).toMilliseconds();
+        const grace_ms = @as(i64, self.config.execution.download_removal_grace_seconds) * 1000;
+        var waiting = false;
+        downloads: for (state.downloads) |*download| {
+            if (download.compact) {
+                var imported = allFiles(current);
+                if (download.episode_id) |episode| {
+                    for (current) |file| {
+                        if (file.episode_id == episode and file.has_file and file.file_id != null) imported = true;
+                    }
+                }
+                if (imported) {
+                    download.missing_since_ms = null;
+                    continue;
+                }
+            }
+            for (J.items(queue, "records")) |record| {
+                if (!downloadInScope(state.*, record, download.*)) continue;
+                download.missing_since_ms = null;
+                continue :downloads;
+            }
+            const hash = try std.ascii.allocLowerString(a, download.hash);
+            const path = try std.fmt.allocPrint(a, "/api/v2/torrents/info?hashes={s}", .{hash});
+            const torrents = try P.get(a, self.config.qbittorrent orelse return error.ConnectionNotConfigured, path);
+            if (torrents != .array) return error.InvalidUpstreamResponse;
+            if (matchesHash(J.array(torrents), "hash", download.hash) or try self.importRecorded(a, state.*, download.*)) {
+                download.missing_since_ms = null;
+                continue;
+            }
+            const since = download.missing_since_ms orelse now;
+            download.missing_since_ms = @min(since, now);
+            waiting = true;
+            if (now - download.missing_since_ms.? < grace_ms) continue;
+            state.removal_confirmed = true;
+            try self.save(a, id, state, "download_removed", "Arr and qBittorrent no longer report an expected download after the removal grace period.");
+            return true;
+        }
+        if (waiting) try self.save(a, id, state, "", "");
+        return waiting;
     }
     fn grab(self: *Runtime, a: A, id: i64, state: *State, release: P.Release, upgrade: bool) !void {
         if (release.guid.len == 0) return error.ExistingReleaseCannotBeGrabbed;
@@ -479,7 +597,7 @@ pub const Runtime = struct {
         try self.vpn(a);
         const first = try self.effect(a, id, key, "arr_grab");
         if (first) {
-            try self.respectExternalQueue(a, id, state.*);
+            _ = try self.respectExternalQueue(a, id, state.*);
             const fresh = try self.load(a, id);
             if (fresh.cancel_requested) return error.CancelRequested;
             try self.effectStatus(id, key, "sending");
@@ -495,10 +613,17 @@ pub const Runtime = struct {
             try self.effectStatus(id, key, "sent");
             try self.save(a, id, state, if (upgrade) "upgrade_grabbed" else "compact_grabbed", release.candidate.title);
         }
-        const found = try self.queueHash(a, state.*, release.candidate.title);
-        const hash = found orelse release.info_hash;
+        const episode_id: ?i64 = if (release.candidate.episode_id == 0) null else release.candidate.episode_id;
+        const found = try self.queueHash(a, state.*, release.candidate.title, episode_id);
+        var known: ?[]const u8 = null;
+        for (state.downloads) |tracked| {
+            if (tracked.episode_id == episode_id and tracked.compact == !upgrade) known = tracked.hash;
+        }
+        const hash = found orelse known orelse release.info_hash;
         if (hash) |value| if (J.validHash(value)) {
+            try trackDownload(a, state, .{ .hash = value, .episode_id = episode_id, .compact = !upgrade });
             if (upgrade) state.upgrade_hash = value else state.compact_hash = value;
+            try self.save(a, id, state, "", "");
         };
     }
     fn choices(a: A, analysis: P.Analysis, upgrade: bool) ![]const P.Release {
@@ -602,7 +727,7 @@ pub const Runtime = struct {
         const profile = try self.nativeProfile(a, state.*);
         const current = try P.files(a, self.config, state.target, profile);
         const compact = try choices(a, analysis, false);
-        if (state.stage == .compact or state.stage == .upgrading) try self.respectExternalQueue(a, id, state.*);
+        const active_queue = if (state.stage == .compact or state.stage == .upgrading) try self.respectExternalQueue(a, id, state.*) else .null;
         if (state.stage == .claiming) {
             const queue = try P.get(a, try P.connection(self.config, state.target.app), "/api/v3/queue?page=1&pageSize=1000");
             if ((J.num(queue, "totalRecords") orelse 1001) > 1000) return error.QueueScopeUnknown;
@@ -656,8 +781,9 @@ pub const Runtime = struct {
             return;
         }
         if (state.stage == .compact) {
+            if (!allFiles(current) and std.Io.Timestamp.now(self.io, .real).toMilliseconds() - state.compact_sent_at_ms > 6 * 3600 * 1000) return error.CompactImportTimeout;
+            if (try self.reconcileRemoval(a, id, state, active_queue, current)) return;
             if (!allFiles(current)) {
-                if (std.Io.Timestamp.now(self.io, .real).toMilliseconds() - state.compact_sent_at_ms > 6 * 3600 * 1000) return error.CompactImportTimeout;
                 if (!state.adopt_original) for (compact) |selected| {
                     try self.grab(a, id, state, selected, false);
                 };
@@ -694,6 +820,7 @@ pub const Runtime = struct {
                 try self.save(a, id, state, "completed", "Arr imported the upgrade and replaced the library copy. Prontarr did not directly delete any files.");
                 return;
             }
+            if (try self.reconcileRemoval(a, id, state, active_queue, current)) return;
             if (usesOriginal(state.*)) {
                 try self.restoreOriginal(a, id, state);
             } else {
