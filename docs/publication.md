@@ -27,4 +27,4 @@ Follow the [trunk-based contribution flow](../CONTRIBUTING.md): integrate into `
 
 The CI Docker test build passed on GitHub. CI also builds the final runtime image and checks its health endpoint, non-root UID and disabled-by-default execution before release. Local Docker builds need a running Docker daemon.
 
-Versioned prereleases start at `0.4.0-alpha.1`; for this release use `docker pull jonasbrother97/prontarr:0.4.0-alpha.6`. Pre-release tags do not update `latest`.
+Versioned prereleases start at `0.4.0-alpha.1`; for this release use `docker pull jonasbrother97/prontarr:0.4.0-alpha.7`. Pre-release tags do not update `latest`.
