@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.0-alpha.7 — Removed download recovery
+
+- Detect removed downloads after a configurable grace period and release plan ownership while preserving imported files.
+- Allow eligible upgrades to start alongside the first copy.
+- Enable automatic queue refresh by default and run runtime CI integration suites concurrently.
+
 ## 0.4.0-alpha.6 — Cooperative download handoff
 
 - Yield active plans to replacement downloads introduced by other apps.
