@@ -14,6 +14,7 @@ pub const Execution = struct {
     allow_all_movies: bool = false,
     allow_all_series: bool = false,
     enabled: bool = false,
+    download_removal_grace_seconds: u32 = 120,
     allowed_movie_ids: []const i64 = &.{},
     allowed_series_ids: []const i64 = &.{},
 };
@@ -86,6 +87,7 @@ pub fn load(init_ctx: std.process.Init) !Config {
         if (ids.len > 1000) return error.InvalidExecutionScope;
         for (ids) |id| if (id <= 0) return error.InvalidExecutionScope;
     }
+    if (config.execution.download_removal_grace_seconds == 0) return error.InvalidDownloadRemovalGrace;
     if (config.execution.automatic and (!config.execution.enabled or !config.execution.standalone)) return error.AutomaticExecutionRequiresStandaloneMode;
     if (config.execution.enabled and ((!config.execution.standalone and config.coordinator == null) or config.vpn_health == null)) return error.ExecutionRequiresCoordinatorAndVpnHealth;
     return config;

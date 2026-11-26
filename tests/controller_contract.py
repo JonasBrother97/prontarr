@@ -26,13 +26,26 @@ class Upstream(BaseHTTPRequestHandler):
     external_movie = False
     external_hash = "e"
     external_episode = None
+    original_present = True
+    torrent_hashes = []
+    movie_queue = []
+    history = []
+    queue_requests = 0
     def log_message(self,*args): pass
     def reply(self,data,status=200):
         body=json.dumps(data).encode(); self.send_response(status); self.send_header('Content-Type','application/json'); self.send_header('Content-Length',str(len(body))); self.end_headers();self.wfile.write(body)
     def do_GET(self):
         p=urlparse(self.path).path
         if p=='/api/v3/series/9':return self.reply({'id':9,'title':'Fixture Series','qualityProfileId':1,'originalLanguage':{'id':1},'runtime':45,'monitored':True})
-        if p=='/api/v2/torrents/info':return self.reply([{'hash':'c'*40,'name':'Fixture Series','size':self.original_size,'progress':self.original_progress,'state':self.original_state}] + ([{'hash':self.external_hash*40,'name':'External replacement','size':self.original_size,'progress':.01,'state':'downloading'}] if self.external_movie else []))
+        if p=='/api/v2/torrents/info':
+            torrents=[{'hash':'c'*40,'name':'Fixture Series','size':self.original_size,'progress':self.original_progress,'state':self.original_state}] if self.original_present else []
+            torrents.extend({'hash':hash} for hash in self.torrent_hashes)
+            if self.external_movie:
+                torrents.append({'hash':self.external_hash*40,'name':'External replacement','size':self.original_size,'progress':.01,'state':'downloading'})
+            hashes=parse_qs(urlparse(self.path).query).get('hashes')
+            if hashes:
+                torrents=[torrent for torrent in torrents if torrent['hash'] in hashes[0].split('|')]
+            return self.reply(torrents)
         if p=='/api/v2/torrents/files':return self.reply([{'name':f'Fixture.Series.S01E{n:02}.mkv','size':self.original_size//4,'priority':7 if n in self.selected else 0} for n in (1,2,3,4)])
         if p=='/api/v3/episode':return self.reply([{'id':449+n,'seriesId':9,'seasonNumber':1,'episodeNumber':n} for n in range(1,9)])
         if p.startswith('/api/v3/episode/'):
@@ -60,7 +73,12 @@ class Upstream(BaseHTTPRequestHandler):
                     item.update(guid=item['guid']+'-'+eid,episodeNumbers=[int(eid)-449],seasonNumber=1,seriesId=9)
                     if item['quality']['quality']['id']==7:item['size']=700*1024**2
             return self.reply(releases)
-        if p=='/api/v3/queue':return self.reply({'totalRecords':8,'records':([{'movieId':48,'downloadId':self.external_hash*40,'title':'compact'}] if self.external_movie else []) + ([{'seriesId':9,'episodeId':self.external_episode,'downloadId':'e'*40,'title':'External episode'}] if self.external_episode else []) + ([{'movieId':48,'downloadId':'d'*40}] if self.active_movie else []) + ([{'movieId':48,'downloadId':'c'*40,'quality':{'quality':{'id':self.original_quality,'resolution':2160 if self.original_quality==19 else 1080}},'customFormatScore':1000 if self.original_quality==19 else 20,'customFormats':[{'id':2 if self.original_quality==19 else 1}]}] if self.source_movie else []) + [{'seriesId':9,'episodeId':449+n,'downloadId':'c'*40,'quality':{'quality':{'id':19,'resolution':2160}},'customFormatScore':1000,'customFormats':[{'id':2}]} for n in range(1,9)]})
+        if p=='/api/v3/history':
+            download_id=parse_qs(urlparse(self.path).query).get('downloadId',[None])[0]
+            return self.reply({'records':[record for record in self.history if record['downloadId']==download_id]})
+        if p=='/api/v3/queue':
+            type(self).queue_requests+=1
+            return self.reply({'totalRecords':8,'records':self.movie_queue + ([{'movieId':48,'downloadId':self.external_hash*40,'title':'compact'}] if self.external_movie else []) + ([{'seriesId':9,'episodeId':self.external_episode,'downloadId':'e'*40,'title':'External episode'}] if self.external_episode else []) + ([{'movieId':48,'downloadId':'d'*40}] if self.active_movie else []) + ([{'movieId':48,'downloadId':'c'*40,'quality':{'quality':{'id':self.original_quality,'resolution':2160 if self.original_quality==19 else 1080}},'customFormatScore':1000 if self.original_quality==19 else 20,'customFormats':[{'id':2 if self.original_quality==19 else 1}]}] if self.source_movie else []) + [{'seriesId':9,'episodeId':449+n,'downloadId':'c'*40,'quality':{'quality':{'id':19,'resolution':2160}},'customFormatScore':1000,'customFormats':[{'id':2}]} for n in range(1,9)]})
         return self.reply({},404)
     def do_POST(self):
         p=self.path; raw=self.rfile.read(int(self.headers.get('Content-Length','0')))
@@ -71,12 +89,23 @@ class Upstream(BaseHTTPRequestHandler):
             if self.conflict:return self.reply({},409)
             type(self).owner=True; return self.reply({'token':'private-owner-token'})
         if p=='/ownership/release':type(self).owner=False;return self.reply({'released':True})
-        if p=='/api/v3/release':type(self).grabs.append(body['guid']);return self.reply({})
+        if p=='/api/v3/release':
+            guid=body['guid']
+            hash=('a' if guid.split('-')[0]=='compact' else 'b')*40
+            if hash not in self.torrent_hashes:
+                type(self).torrent_hashes.append(hash)
+            type(self).grabs.append(guid)
+            return self.reply({})
         return self.reply({},404)
 
 class ControllerContract(unittest.TestCase):
     def setUp(self):
         Upstream.file=None;Upstream.grabs=[];Upstream.owner=False;Upstream.healthy=True;Upstream.conflict=False;Upstream.active_movie=False;Upstream.reject_compact=False;Upstream.source_movie=False;Upstream.original_state='downloading';Upstream.original_size=15*1024**3;Upstream.original_quality=19;Upstream.original_progress=.01;Upstream.controls=[];Upstream.selected=[1];Upstream.episode_files={};Upstream.embedded_slim=False;Upstream.external_movie=False;Upstream.external_hash="e";Upstream.external_episode=None
+        Upstream.original_present=True
+        Upstream.torrent_hashes=[]
+        Upstream.movie_queue=[]
+        Upstream.history=[]
+        Upstream.queue_requests=0
         self.server=ThreadingHTTPServer(('127.0.0.1',0),Upstream)
         self.thread=threading.Thread(target=self.server.serve_forever,daemon=True);self.thread.start()
         self.temp=tempfile.TemporaryDirectory(prefix='prontarr-controller-');self.folder=Path(self.temp.name)
@@ -107,6 +136,96 @@ class ControllerContract(unittest.TestCase):
     def plan(self):
         status,data,_=request('/api/jobs',{'target':{'app':'radarr','media_id':48}});self.assertEqual(status,202)
         self.wait_stage(data['id'],'ready');return data['id']
+    def removal_grace(self, *, automatic=False):
+        self.stop()
+        path=self.folder/'connections.json'
+        config=json.loads(path.read_text())
+        config['execution']['download_removal_grace_seconds']=3
+        if automatic:
+            config['execution'].update(standalone=True, automatic=True)
+        path.write_text(json.dumps(config))
+        self.start()
+
+    def wait_for(self, condition):
+        for _ in range(100):
+            if condition():
+                return
+            time.sleep(.1)
+        self.fail("condition did not become true")
+
+    def download_missing_since(self, job, hash):
+        with sqlite3.connect(self.folder/'db.sqlite') as db:
+            state=json.loads(db.execute('SELECT state FROM live_jobs WHERE id=?',(job,)).fetchone()[0])
+        return next((entry['missing_since_ms'] for entry in state['downloads'] if entry['hash']==hash), None)
+
+    def test_manual_compact_removal_grace_survives_restart(self):
+        self.removal_grace()
+        compact='a'*40
+        Upstream.torrent_hashes=[compact]
+        job=self.plan()
+        self.assertEqual(request(f'/api/jobs/{job}/start',{})[0],202)
+        self.wait_for(lambda: Upstream.grabs == ['compact'])
+        Upstream.torrent_hashes=[]
+        self.wait_for(lambda: self.download_missing_since(job,compact) is not None)
+        since=self.download_missing_since(job,compact)
+        self.assertTrue(Upstream.owner)
+        self.stop()
+        self.start()
+        self.assertEqual(self.download_missing_since(job,compact),since)
+        result=self.wait_stage(job,'cancelled')
+        self.assertTrue(result['job']['external_handoff'])
+        self.assertFalse(Upstream.owner)
+        self.assertEqual(Upstream.grabs,['compact'])
+        self.assertEqual(Upstream.controls,[])
+
+    def test_queue_gap_and_import_history_preserve_compact_plan(self):
+        self.removal_grace()
+        compact='a'*40
+        Upstream.torrent_hashes=[compact]
+        job=self.plan()
+        self.assertEqual(request(f'/api/jobs/{job}/start',{})[0],202)
+        self.wait_for(lambda: Upstream.grabs == ['compact'])
+        Upstream.torrent_hashes=[]
+        self.wait_for(lambda: self.download_missing_since(job,compact) is not None)
+        Upstream.movie_queue=[{'movieId':48,'downloadId':compact,'title':'compact','status':'completed','trackedDownloadState':'importing'}]
+        self.wait_for(lambda: self.download_missing_since(job,compact) is None)
+        Upstream.history=[{'movieId':48,'downloadId':compact.upper(),'eventType':'downloadFolderImported'}]
+        Upstream.movie_queue=[]
+        time.sleep(4.2)
+        self.assertEqual(request(f'/api/jobs/{job}')[1]['job']['stage'],'compact')
+        self.assertEqual(Upstream.grabs,['compact'])
+        Upstream.file={'id':10,'quality':{'quality':{'id':7}},'customFormatScore':20}
+        self.wait_stage(job,'upgrading')
+
+    def test_cleanup_of_original_preserves_import_and_leaves_delayed_replacement(self):
+        Upstream.source_movie=True
+        self.removal_grace(automatic=True)
+        self.wait_for(lambda: Upstream.grabs == ['compact'])
+        job=request('/api/jobs')[1]['items'][0]['id']
+        Upstream.file={'id':10,'quality':{'quality':{'id':7}},'customFormatScore':20}
+        self.wait_stage(job,'upgrading')
+        self.wait_for(lambda: Upstream.controls == ['stop','start'])
+        Upstream.original_present=False
+        Upstream.source_movie=False
+        Upstream.history=[{'movieId':48,'downloadId':'C'*40,'eventType':'downloadFailed'}]
+        result=self.wait_stage(job,'cancelled')
+        self.assertTrue(result['job']['external_handoff'])
+        with sqlite3.connect(self.folder/'db.sqlite') as db:
+            self.assertEqual(db.execute('SELECT count(*) FROM live_ownership').fetchone()[0],0)
+        # Remove the fixture library file after verifying the handoff kept it so
+        # automatic intake would be eligible if the old scope were ignored.
+        self.assertEqual(Upstream.file['id'],10)
+        self.stop()
+        Upstream.file=None
+        Upstream.external_movie=True
+        Upstream.queue_requests=0
+        self.start()
+        # The second queue request reaches Sonarr after Radarr intake runs.
+        self.wait_for(lambda: Upstream.queue_requests >= 2)
+        self.assertEqual(len(request('/api/jobs')[1]['items']),1)
+        self.assertEqual(Upstream.grabs,['compact'])
+        self.assertEqual(Upstream.controls,['stop','start'])
+
     def test_full_lifecycle_restart_idempotency_and_redaction(self):
         id=self.plan();status,again,_=request('/api/jobs',{'target':{'app':'radarr','media_id':48}});self.assertEqual(again['id'],id)
         self.assertEqual(request(f'/api/jobs/{id}/start',{})[0],202)
