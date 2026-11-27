@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.0-alpha.8 — Upgrade revalidation
+
+- Recheck the selected release with Arr before requesting a new upgrade.
+- Preserve the first copy and offer reanalysis when the selected upgrade no longer qualifies.
+
 ## 0.4.0-alpha.7 — Removed download recovery
 
 - Detect removed downloads after a configurable grace period and release plan ownership while preserving imported files.
