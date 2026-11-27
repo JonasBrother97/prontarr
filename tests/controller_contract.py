@@ -14,6 +14,7 @@ class Upstream(BaseHTTPRequestHandler):
     conflict = False
     active_movie = False
     reject_compact = False
+    upgrade_change = None
     source_movie = False
     original_state = 'downloading'
     original_size = 15*1024**3
@@ -67,6 +68,12 @@ class Upstream(BaseHTTPRequestHandler):
             return self.reply(profile,200 if profile else 404)
         if p=='/api/v3/release':
             releases=[{'guid':g,'title':g,'indexerId':1,'size':size,'seeders':30,'quality':{'quality':{'id':qid,'name':name,'resolution':res}},'languages':[{'id':1}],'customFormatScore':score,'customFormats':[{'id':1 if qid==7 else 2}],'approved':not (self.reject_compact and g=='compact'),'rejected':self.reject_compact and g=='compact','temporarilyRejected':False,'downloadAllowed':True,'protocol':'torrent','infoHash':h*40} for g,size,qid,name,res,score,h in [('compact',2*1024**3,7,'Bluray-1080p',1080,20,'a'),('upgrade',15*1024**3,19,'Bluray-2160p',2160,1000,'b')]]
+            if self.upgrade_change == 'blocked':
+                releases[1].update(approved=False, rejected=True, downloadAllowed=False, rejections=['Release is blocklisted'])
+            elif self.upgrade_change == 'missing':
+                releases.pop()
+            elif self.upgrade_change == 'dubbed':
+                releases[1].update(languages=[{'id':2}])
             eid=parse_qs(urlparse(self.path).query).get('episodeId',[None])[0]
             if eid:
                 for item in releases:
@@ -101,6 +108,7 @@ class Upstream(BaseHTTPRequestHandler):
 class ControllerContract(unittest.TestCase):
     def setUp(self):
         Upstream.file=None;Upstream.grabs=[];Upstream.owner=False;Upstream.healthy=True;Upstream.conflict=False;Upstream.active_movie=False;Upstream.reject_compact=False;Upstream.source_movie=False;Upstream.original_state='downloading';Upstream.original_size=15*1024**3;Upstream.original_quality=19;Upstream.original_progress=.01;Upstream.controls=[];Upstream.selected=[1];Upstream.episode_files={};Upstream.embedded_slim=False;Upstream.external_movie=False;Upstream.external_hash="e";Upstream.external_episode=None
+        Upstream.upgrade_change=None
         Upstream.original_present=True
         Upstream.torrent_hashes=[]
         Upstream.movie_queue=[]
@@ -251,6 +259,29 @@ class ControllerContract(unittest.TestCase):
         encoded=json.dumps(final)
         for secret in ['private-owner-token','fixture-secret','indexer_id','"guid"']:self.assertNotIn(secret,encoded)
         self.assertEqual((self.folder/'db.sqlite').stat().st_mode&0o777,0o600)
+    def assert_changed_upgrade_stops_before_grab(self, change):
+        job=self.plan()
+        self.assertEqual(request(f'/api/jobs/{job}/start',{})[0],202)
+        self.wait_for(lambda: Upstream.grabs == ['compact'])
+        Upstream.upgrade_change=change
+        Upstream.file={'id':10,'quality':{'quality':{'id':7}},'customFormatScore':20}
+        result=self.wait_stage(job,'review')
+        self.assertEqual(result['job']['error_code'],'UpgradeReleaseIneligible')
+        self.assertTrue(any('Reanalyze' in event['detail'] for event in result['events']))
+        self.assertFalse(Upstream.owner)
+        self.assertEqual(Upstream.file['id'],10)
+        self.assertEqual(Upstream.grabs,['compact'])
+        self.assertEqual(Upstream.controls,[])
+
+    def test_blocklisted_upgrade_is_not_grabbed_after_import(self):
+        self.assert_changed_upgrade_stops_before_grab('blocked')
+
+    def test_missing_upgrade_is_not_grabbed_after_import(self):
+        self.assert_changed_upgrade_stops_before_grab('missing')
+
+    def test_dubbed_upgrade_is_not_grabbed_after_import(self):
+        self.assert_changed_upgrade_stops_before_grab('dubbed')
+
     def test_parallel_upgrade_can_import_first_without_regrabbing(self):
         policy=request('/api/policy')[1]
         policy['parallel_upgrade']=True
@@ -263,6 +294,7 @@ class ControllerContract(unittest.TestCase):
             time.sleep(.1)
         self.assertEqual(Upstream.grabs,['compact','upgrade'])
         self.assertIsNone(Upstream.file)
+        Upstream.upgrade_change='blocked'
         self.stop()
         self.start()
         Upstream.file={'id':11,'quality':{'quality':{'id':19}},'customFormatScore':1000}

@@ -345,6 +345,8 @@
   "The existing download has already made significant progress. It is preserved instead of being replaced with a first copy.": "The existing download has already made significant progress. It is preserved instead of being replaced with a first copy.",
   "Another plan controls this download. Review the active plan before trying again.": "Another plan controls this download. Review the active plan before trying again.",
   "The proposed replacement could not be verified as an upgrade. Review the final profile and custom format scores.": "The proposed replacement could not be verified as an upgrade. Review the final profile and custom format scores.",
+  "The selected upgrade no longer qualifies. Reanalyze the plan to select an eligible release.": "The selected upgrade no longer qualifies. Reanalyze the plan to select an eligible release.",
+  "Upgrade eligibility changed. Existing downloads and library files were preserved. Reanalyze to select an eligible upgrade.": "Upgrade eligibility changed. Existing downloads and library files were preserved. Reanalyze to select an eligible upgrade.",
   "The first copy was not imported within six hours. Check the Arr queue and import errors before continuing.": "The first copy was not imported within six hours. Check the Arr queue and import errors before continuing.",
   "Review is required before execution can continue. Check the event history for details.": "Review is required before execution can continue. Check the event history for details.",
   "The download VPN is unhealthy. Active plans wait for recovery; plans needing attention must be reanalyzed.": "The download VPN is unhealthy. Active plans wait for recovery; plans needing attention must be reanalyzed.",
