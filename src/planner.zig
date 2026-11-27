@@ -311,6 +311,30 @@ fn originalRelease(a: A, config: T.Config, ref: Ref, profile: J.Value, initial: 
     }
     return .{ .hash = hash, .title = J.str(torrent, "name") orelse "Existing release", .quality_id = qid.?, .format_score = score.?, .resolution = @intCast(resolution), .bytes = @intCast(size), .compact = compact, .paused = std.mem.startsWith(u8, status, "stopped") or std.mem.startsWith(u8, status, "paused"), .progress = fraction };
 }
+pub fn revalidateUpgrade(a: A, io: std.Io, config: T.Config, target: Ref, policy: E.Policy, selected: Release) !void {
+    var ref = target;
+    // A new release is checked on its own merits, without the queue-conflict exception.
+    ref.original_hash = null;
+    if (ref.app == .sonarr) ref.episode_ids = &.{selected.candidate.episode_id};
+    const refreshed = try analyze(a, io, config, ref, policy, true);
+    if (!refreshed.report.upgrade_allowed or refreshed.report.files.len != 1) return error.UpgradeReleaseIneligible;
+    for (refreshed.releases) |release| {
+        if (!std.mem.eql(u8, release.candidate.id, selected.candidate.id)) continue;
+        if (release.candidate.upgrade == false or release.candidate.seeds < policy.min_seeders) break;
+        if (refreshed.report.files[0].has_file and release.candidate.upgrade != true) break;
+        // Import verification still uses the selected quality and score. A changed
+        // candidate needs a new analysis before it can become the plan's target.
+        if (release.candidate.quality_id != selected.candidate.quality_id or release.candidate.format_score != selected.candidate.format_score) break;
+        if (selected.info_hash) |expected| {
+            if (release.info_hash) |fresh| {
+                if (!std.ascii.eqlIgnoreCase(expected, fresh)) break;
+            }
+        }
+        return;
+    }
+    return error.UpgradeReleaseIneligible;
+}
+
 pub fn analyze(a: A, io: std.Io, config: T.Config, reference: Ref, policy: E.Policy, search_sources: bool) !Analysis {
     try validate(reference);
     var ref = reference;

@@ -37,6 +37,8 @@ export const jobErrorMessages: Record<string, string> = {
     "Another plan controls this download. Review the active plan before trying again.",
   NotAVerifiedUpgrade:
     "The proposed replacement could not be verified as an upgrade. Review the final profile and custom format scores.",
+  UpgradeReleaseIneligible:
+    "The selected upgrade no longer qualifies. Reanalyze the plan to select an eligible release.",
   CompactImportTimeout:
     "The first copy was not imported within six hours. Check the Arr queue and import errors before continuing.",
 };

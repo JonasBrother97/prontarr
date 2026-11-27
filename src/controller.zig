@@ -258,6 +258,12 @@ pub const Runtime = struct {
                             try self.save(a, job.id, &state, "external_handoff", "Another app changed this download. Prontarr released control and preserved the replacement; native cleanup and upgrades remain enabled.");
                             return;
                         }
+                        if (err == error.UpgradeReleaseIneligible) {
+                            try self.compensate(a, job.id, &state);
+                            state.stage = .review;
+                            try self.save(a, job.id, &state, "needs_review", "Upgrade eligibility changed. Existing downloads and library files were preserved. Reanalyze to select an eligible upgrade.");
+                            return;
+                        }
                         state.stage = .review;
                         self.restoreOriginal(a, job.id, &state) catch {};
                         try self.save(a, job.id, &state, "needs_review", @errorName(err));
@@ -597,6 +603,7 @@ pub const Runtime = struct {
         try self.vpn(a);
         const first = try self.effect(a, id, key, "arr_grab");
         if (first) {
+            if (upgrade) try P.revalidateUpgrade(a, self.io, self.config, state.target, state.policy, release);
             _ = try self.respectExternalQueue(a, id, state.*);
             const fresh = try self.load(a, id);
             if (fresh.cancel_requested) return error.CancelRequested;
