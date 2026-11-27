@@ -144,18 +144,18 @@ class ControllerContract(unittest.TestCase):
     def plan(self):
         status,data,_=request('/api/jobs',{'target':{'app':'radarr','media_id':48}});self.assertEqual(status,202)
         self.wait_stage(data['id'],'ready');return data['id']
-    def removal_grace(self, *, automatic=False):
+    def removal_grace(self, *, automatic=False, seconds=3):
         self.stop()
         path=self.folder/'connections.json'
         config=json.loads(path.read_text())
-        config['execution']['download_removal_grace_seconds']=3
+        config['execution']['download_removal_grace_seconds']=seconds
         if automatic:
             config['execution'].update(standalone=True, automatic=True)
         path.write_text(json.dumps(config))
         self.start()
 
-    def wait_for(self, condition):
-        for _ in range(100):
+    def wait_for(self, condition, timeout=10):
+        for _ in range(timeout*10):
             if condition():
                 return
             time.sleep(.1)
@@ -187,19 +187,21 @@ class ControllerContract(unittest.TestCase):
         self.assertEqual(Upstream.controls,[])
 
     def test_queue_gap_and_import_history_preserve_compact_plan(self):
-        self.removal_grace()
+        grace_seconds=9
+        self.removal_grace(seconds=grace_seconds)
         compact='a'*40
         Upstream.torrent_hashes=[compact]
         job=self.plan()
         self.assertEqual(request(f'/api/jobs/{job}/start',{})[0],202)
         self.wait_for(lambda: Upstream.grabs == ['compact'])
+        self.wait_for(lambda: request(f'/api/jobs/{job}')[1]['job']['compact_hash']==compact)
         Upstream.torrent_hashes=[]
-        self.wait_for(lambda: self.download_missing_since(job,compact) is not None)
+        self.wait_for(lambda: self.download_missing_since(job,compact) is not None, timeout=20)
         Upstream.movie_queue=[{'movieId':48,'downloadId':compact,'title':'compact','status':'completed','trackedDownloadState':'importing'}]
         self.wait_for(lambda: self.download_missing_since(job,compact) is None)
         Upstream.history=[{'movieId':48,'downloadId':compact.upper(),'eventType':'downloadFolderImported'}]
         Upstream.movie_queue=[]
-        time.sleep(4.2)
+        time.sleep(grace_seconds+2)
         self.assertEqual(request(f'/api/jobs/{job}')[1]['job']['stage'],'compact')
         self.assertEqual(Upstream.grabs,['compact'])
         Upstream.file={'id':10,'quality':{'quality':{'id':7}},'customFormatScore':20}
