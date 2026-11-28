@@ -68,6 +68,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: runtime-image
@@ -88,6 +91,49 @@ jobs:
             sleep 1
           done
           exit 1
+      - name: Install the x86-64 user-mode emulator
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends qemu-user-static
+      - name: Exercise the release image without AVX or AVX-512
+        shell: bash
+        run: |
+          qemu=/usr/bin/qemu-x86_64-static
+          cpu=qemu64,-avx,-avx2,-avx512f
+          ulimit -c 0
+          cc -x assembler -nostdlib -static -o "$RUNNER_TEMP/avx512-probe" - <<'ASM'
+          .text
+          .globl _start
+          _start:
+              vpxord %zmm0, %zmm0, %zmm0
+              mov $60, %eax
+              xor %edi, %edi
+              syscall
+          ASM
+          probe_status=0
+          "$qemu" -cpu "$cpu" "$RUNNER_TEMP/avx512-probe" || probe_status=$?
+          if [[ "$probe_status" -ne 132 ]]; then
+            echo "Expected SIGILL from the AVX-512 probe, got status $probe_status."
+            exit 1
+          fi
+
+          docker run --detach --name prontarr-baseline --publish 127.0.0.1:5882:5882 \
+            --mount "type=bind,source=$qemu,target=/usr/local/bin/qemu-x86_64-static,readonly" \
+            --entrypoint /usr/local/bin/qemu-x86_64-static prontarr:ci \
+            -cpu "$cpu" /usr/local/bin/prontarr
+          trap 'docker logs prontarr-baseline; docker rm --force prontarr-baseline' EXIT
+          for _attempt in $(seq 1 30); do
+            if curl --fail --silent --max-time 3 http://127.0.0.1:5882/api/health > "$RUNNER_TEMP/prontarr-baseline-health.json"; then
+              break
+            fi
+            test "$(docker inspect --format '{{.State.Running}}' prontarr-baseline)" = true
+            sleep 1
+          done
+          python3 -c 'import json,sys; h=json.load(sys.stdin); assert h["status"]=="ok" and h["live_actions_enabled"] is False' < "$RUNNER_TEMP/prontarr-baseline-health.json"
+          curl --fail --silent --show-error --max-time 10 \
+            --header 'Content-Type: application/json' --data-binary @docs/example-input.json \
+            http://127.0.0.1:5882/api/simulate |
+            python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["action"]=="download_compact" and d["candidate_id"]=="compact" and d["may_remove_first_copy"] is False'
     needs:
       - build
   syft:
