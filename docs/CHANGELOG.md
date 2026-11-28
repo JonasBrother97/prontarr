@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.0-alpha.9 — Baseline runtime compatibility
+
+- Gate container publication on startup and simulation under an emulated x86-64 CPU with AVX disabled.
+- Require the same CPU configuration to reject an AVX-512 probe.
+
 ## 0.4.0-alpha.8 — Upgrade revalidation
 
 - Recheck the selected release with Arr before requesting a new upgrade.

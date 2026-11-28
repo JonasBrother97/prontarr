@@ -63,7 +63,7 @@ docker run -d --name prontarr \
   --restart unless-stopped \
   -p 127.0.0.1:5882:5882 \
   -v prontarr-data:/data \
-  jonasbrother97/prontarr:0.4.0-alpha.8
+  jonasbrother97/prontarr:0.4.0-alpha.9
 ```
 
 Open [http://127.0.0.1:5882](http://127.0.0.1:5882). This starts the UI and simulator with live execution disabled. Configure private service connections using the [connection guide](docs/connections.md), then follow the [execution guide](docs/execution.md) for the guarded pilot.
